@@ -1,4 +1,5 @@
 FROM node:20-alpine AS base
+RUN apk add --no-cache openssl
 RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /app
 
@@ -24,8 +25,7 @@ RUN pnpm --filter @crm/shared build
 RUN pnpm --filter @crm/api build
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
-RUN corepack enable && corepack prepare pnpm@9 --activate
+FROM base AS runner
 WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
