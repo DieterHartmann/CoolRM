@@ -1,0 +1,30 @@
+# Production overrides — used with: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  postgres:
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  redis:
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  api:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  worker:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  frontend:
+    restart: always

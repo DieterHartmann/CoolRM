@@ -1,0 +1,106 @@
+// Tenant schema template.
+// This file drives type generation only. The actual schema is applied per-tenant
+// at provisioning time via prisma/tenant/init.sql (generated from this file).
+// At runtime, a PrismaClient is instantiated with ?schema=tenant_XXXXXXXX in the
+// connection URL, which sets search_path to the correct tenant schema.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/tenant"
+}
+
+datasource db {
+  provider = "postgresql"
+  // TENANT_DATABASE_URL is only needed for `prisma migrate diff` runs.
+  // At runtime the factory in src/tenant-client.ts builds the URL dynamically.
+  url      = env("TENANT_DATABASE_URL")
+}
+
+model Contact {
+  id        String        @id @default(uuid())
+  appletId  String        @map("applet_id")
+  refNumber String        @unique @map("ref_number")
+  name      String
+  email     String
+  phone     String?
+  message   String
+  status    ContactStatus @default(new)
+  deletedAt DateTime?     @map("deleted_at") @db.Timestamptz(6)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  threads Thread[]
+
+  @@map("contacts")
+}
+
+enum ContactStatus {
+  new
+  open
+  resolved
+}
+
+model Thread {
+  id             String   @id @default(uuid())
+  contactId      String   @map("contact_id")
+  subject        String
+  lastActivityAt DateTime @map("last_activity_at") @db.Timestamptz(6)
+
+  contact  Contact   @relation(fields: [contactId], references: [id])
+  messages Message[]
+
+  @@map("threads")
+}
+
+model Message {
+  id             String           @id @default(uuid())
+  threadId       String           @map("thread_id")
+  direction      MessageDirection
+  fromAddress    String           @map("from_address")
+  toAddress      String           @map("to_address")
+  subject        String
+  bodyHtml       String?          @map("body_html")
+  bodyText       String?          @map("body_text")
+  sentAt         DateTime         @map("sent_at") @db.Timestamptz(6)
+  emailMessageId String?          @unique @map("email_message_id")
+  hasRef         Boolean          @default(false) @map("has_ref")
+
+  thread      Thread       @relation(fields: [threadId], references: [id])
+  attachments Attachment[]
+
+  @@map("messages")
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+model Attachment {
+  id          String  @id @default(uuid())
+  messageId   String  @map("message_id")
+  filename    String
+  mimeType    String  @map("mime_type")
+  storagePath String  @map("storage_path")
+  sizeBytes   Int     @map("size_bytes")
+
+  message Message @relation(fields: [messageId], references: [id])
+
+  @@map("attachments")
+}
+
+model EmailAccount {
+  id          String        @id @default(uuid())
+  appletId    String        @map("applet_id")
+  provider    EmailProvider
+  oauthTokens String?       @map("oauth_tokens")
+  smtpConfig  Json?         @map("smtp_config")
+  lastSyncAt  DateTime?     @map("last_sync_at") @db.Timestamptz(6)
+
+  @@map("email_accounts")
+}
+
+enum EmailProvider {
+  gmail
+  outlook
+  imap
+}

@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/platform"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id               String   @id @default(uuid())
+  slug             String   @unique
+  companyName      String   @map("company_name")
+  ownerEmail       String   @map("owner_email")
+  stripeCustomerId String?  @map("stripe_customer_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  applets       Applet[]
+  users         User[]
+  billingEvents BillingEvent[]
+
+  @@map("tenants")
+}
+
+model Applet {
+  id                   String   @id @default(uuid())
+  tenantId             String   @map("tenant_id")
+  name                 String
+  widgetKey            String   @unique @map("widget_key")
+  isActive             Boolean  @default(false) @map("is_active")
+  stripeSubscriptionId String?  @map("stripe_subscription_id")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  billingEvents BillingEvent[]
+
+  @@map("applets")
+}
+
+model User {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  email          String   @unique
+  hashedPassword String   @map("hashed_password")
+  role           UserRole @default(member)
+  emailVerified  Boolean  @default(false) @map("email_verified")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("users")
+}
+
+enum UserRole {
+  owner
+  member
+}
+
+model VerificationToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("verification_tokens")
+}
+
+model BillingEvent {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  appletId      String   @map("applet_id")
+  eventType     String   @map("event_type")
+  stripeEventId String   @map("stripe_event_id")
+  amountZar     Int      @map("amount_zar")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  applet Applet @relation(fields: [appletId], references: [id])
+
+  @@map("billing_events")
+}
