@@ -4,7 +4,7 @@ WORKDIR /app
 
 # ── Install deps (cached layer) ───────────────────────────────────────────────
 FROM base AS deps
-COPY package.json pnpm-workspace.yaml ./
+COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/db/package.json ./packages/db/
 COPY packages/shared/package.json ./packages/shared/
@@ -24,7 +24,7 @@ FROM node:20-alpine AS runner
 RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml ./
+COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/db/package.json ./packages/db/
 COPY packages/shared/package.json ./packages/shared/

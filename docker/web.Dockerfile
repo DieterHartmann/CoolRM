@@ -4,7 +4,7 @@ WORKDIR /app
 
 # ── Install deps ──────────────────────────────────────────────────────────────
 FROM base AS deps
-COPY package.json pnpm-workspace.yaml ./
+COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
 RUN pnpm install
