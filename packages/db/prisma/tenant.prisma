@@ -5,8 +5,9 @@
 // connection URL, which sets search_path to the correct tenant schema.
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/tenant"
+  provider      = "prisma-client-js"
+  output        = "../src/generated/tenant"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
 }
 
 datasource db {

@@ -47,6 +47,47 @@ export async function sendVerificationEmail(to: string, url: string): Promise<vo
   });
 }
 
+export async function sendNewContactEmail(
+  to: string,
+  appletName: string,
+  contact: { ref: string; name: string; email: string; phone?: string; message: string },
+): Promise<void> {
+  const transporter = getTransporter();
+  const subject = `New contact [${contact.ref}] via ${appletName}`;
+
+  if (!transporter) {
+    console.info('[Email] New contact notification (no SMTP configured):', { to, subject, contact });
+    return;
+  }
+
+  await transporter.sendMail({
+    from: config.SMTP_FROM ?? config.SMTP_USER,
+    to,
+    subject,
+    text: [
+      `New contact received via ${appletName}`,
+      `Ref: ${contact.ref}`,
+      `Name: ${contact.name}`,
+      `Email: ${contact.email}`,
+      contact.phone ? `Phone: ${contact.phone}` : '',
+      ``,
+      contact.message,
+    ].filter(Boolean).join('\n'),
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#1f2937">New contact: ${contact.ref}</h2>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+          <tr><td style="padding:6px 0;color:#6b7280;width:80px">Name</td><td style="padding:6px 0;font-weight:500">${contact.name}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280">Email</td><td style="padding:6px 0">${contact.email}</td></tr>
+          ${contact.phone ? `<tr><td style="padding:6px 0;color:#6b7280">Phone</td><td style="padding:6px 0">${contact.phone}</td></tr>` : ''}
+        </table>
+        <div style="background:#f9fafb;border-radius:6px;padding:16px;white-space:pre-wrap">${contact.message}</div>
+        <p style="color:#9ca3af;font-size:12px;margin-top:16px">Received via ${appletName} · CoolRM</p>
+      </div>
+    `,
+  });
+}
+
 export async function sendPasswordResetEmail(to: string, url: string): Promise<void> {
   const transporter = getTransporter();
 
