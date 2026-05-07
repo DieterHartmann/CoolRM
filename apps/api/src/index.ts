@@ -8,6 +8,7 @@ import { toNodeHandler } from 'better-auth/node';
 import { config } from './config.js';
 import { auth } from './auth.js';
 import { getTenantSchemaName, disconnectPlatformClient, disconnectAllTenantClients } from '@crm/db';
+import appletRoutes from './routes/applets.js';
 
 // Extend Fastify's request type to carry session context
 declare module 'fastify' {
@@ -107,9 +108,7 @@ export async function buildApp() {
     env: config.NODE_ENV,
   }));
 
-  // TODO Phase 1: register feature route plugins here
-  // await app.register(contactRoutes, { prefix: '/api/v1/contacts' });
-  // await app.register(appletRoutes, { prefix: '/api/v1/applets' });
+  await app.register(appletRoutes, { prefix: '/api/v1/applets' });
 
   return app;
 }
