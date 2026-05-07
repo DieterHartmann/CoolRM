@@ -17,6 +17,9 @@ COPY packages/db ./packages/db
 COPY packages/shared ./packages/shared
 RUN pnpm --filter @crm/db generate
 RUN pnpm --filter @crm/db build
+# Prisma emits JS runtime files into src/generated/ — tsc never copies them.
+# Move them into dist/generated/ so Node can resolve './generated/...' imports.
+RUN cp -r packages/db/src/generated packages/db/dist/generated
 RUN pnpm --filter @crm/shared build
 RUN pnpm --filter @crm/api build
 
@@ -32,8 +35,9 @@ COPY packages/shared/package.json ./packages/shared/
 RUN pnpm install --prod
 
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
+# dist/ now contains compiled JS + generated Prisma runtime under dist/generated/
 COPY --from=builder /app/packages/db/dist ./packages/db/dist
-COPY --from=builder /app/packages/db/src/generated ./packages/db/src/generated
+# prisma/ is needed at runtime for the tenant init.sql path in provision.ts
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
