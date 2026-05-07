@@ -41,11 +41,6 @@ export const auth = betterAuth({
   baseURL: config.API_URL,
   basePath: '/api/auth',
 
-  // UUID generation for all Better Auth-managed IDs
-  advanced: {
-    generateId: () => randomUUID(),
-  },
-
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,

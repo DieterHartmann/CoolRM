@@ -76,21 +76,26 @@ export async function buildApp() {
       return;
     }
 
-    const session = await auth.api.getSession({
-      headers: request.headers as Parameters<typeof auth.api.getSession>[0]['headers'],
-    });
+    const webHeaders = new Headers();
+    for (const [key, value] of Object.entries(request.headers)) {
+      if (typeof value === 'string') webHeaders.set(key, value);
+      else if (Array.isArray(value)) webHeaders.set(key, value.join(', '));
+    }
+
+    type SessionResult = { user: { id: string; email: string; [key: string]: unknown } | null } | null;
+    const session = await (auth.api.getSession as unknown as (opts: { headers: Headers }) => Promise<SessionResult>)({ headers: webHeaders });
 
     if (!session?.user) {
       return reply.status(401).send({ success: false, error: 'Unauthorized' });
     }
 
-    const tenantId = (session.user as Record<string, unknown>)['tenantId'] as string | null | undefined;
+    const tenantId = session.user['tenantId'] as string | null | undefined;
 
     request.sessionUser = {
       id: session.user.id,
       email: session.user.email,
       tenantId,
-      role: (session.user as Record<string, unknown>)['role'] as string ?? 'member',
+      role: session.user['role'] as string ?? 'member',
       schemaName: tenantId ? getTenantSchemaName(tenantId) : null,
     };
   });
