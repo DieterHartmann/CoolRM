@@ -35,6 +35,8 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     restart: unless-stopped
+    command: >
+      sh -c "node apps/api/dist/migrate.js && node apps/api/dist/index.js"
     env_file:
       - .env
     environment:
