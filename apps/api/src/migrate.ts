@@ -40,11 +40,17 @@ async function run(): Promise<void> {
 
     console.info(`[migrate] applying: ${name}`);
     const sql = readFileSync(sqlFile, 'utf-8');
-    await db.$executeRawUnsafe(sql);
+    // $executeRawUnsafe uses prepared statements — PostgreSQL rejects multiple
+    // commands in one prepared statement. Execute each statement individually.
+    const statements = sql
+      .split(';')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith('--'));
+    for (const stmt of statements) {
+      await db.$executeRawUnsafe(stmt);
+    }
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO _crm_migrations (name) VALUES ('${name}')`,
-    );
+    await db.$executeRaw`INSERT INTO _crm_migrations (name) VALUES (${name})`;
     console.info(`[migrate] done: ${name}`);
   }
 
