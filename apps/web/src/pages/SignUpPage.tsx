@@ -1,46 +1,75 @@
 import { CSSProperties, FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { signIn } from '../lib/auth-client.js';
-import { useAuth } from '../lib/auth.js';
+import { Link } from 'react-router-dom';
+import { signUp } from '../lib/auth-client.js';
 
-export default function LoginPage() {
+type Stage = 'form' | 'verify';
+
+export default function SignUpPage() {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
-  const { refresh } = useAuth();
+  const [stage, setStage] = useState<Stage>('form');
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await signIn(email, password);
-      await refresh();
-      navigate('/');
+      await signUp(email, password, name);
+      setStage('verify');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign in failed');
+      setError(err instanceof Error ? err.message : 'Sign up failed');
     } finally {
       setLoading(false);
     }
+  }
+
+  if (stage === 'verify') {
+    return (
+      <div style={outer}>
+        <div style={card}>
+          <h1 style={{ margin: '0 0 12px', fontSize: 22, fontWeight: 700, color: '#1e293b' }}>Check your email</h1>
+          <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>
+            We sent a verification link to <strong>{email}</strong>.
+            Click it to activate your account, then come back to sign in.
+          </p>
+          <p style={{ marginTop: 20, fontSize: 13 }}>
+            <Link to="/login" style={{ color: '#3b82f6', textDecoration: 'none' }}>Back to sign in →</Link>
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div style={outer}>
       <div style={card}>
         <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: '#1e293b' }}>CoolRM</h1>
-        <p style={{ margin: '0 0 28px', fontSize: 14, color: '#64748b' }}>Sign in to your account</p>
+        <p style={{ margin: '0 0 28px', fontSize: 14, color: '#64748b' }}>Create your account</p>
 
         <form onSubmit={handleSubmit}>
           <label style={labelS}>
+            Company / Your name
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              required
+              autoFocus
+              placeholder="Acme Corp"
+              style={inputS}
+            />
+          </label>
+
+          <label style={{ ...labelS, marginTop: 16 }}>
             Email
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
-              autoFocus
               placeholder="you@company.com"
               style={inputS}
             />
@@ -53,7 +82,8 @@ export default function LoginPage() {
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
-              placeholder="••••••••"
+              minLength={8}
+              placeholder="At least 8 characters"
               style={inputS}
             />
           </label>
@@ -63,13 +93,13 @@ export default function LoginPage() {
           )}
 
           <button type="submit" disabled={loading} style={btnS}>
-            {loading ? 'Signing in…' : 'Sign in'}
+            {loading ? 'Creating account…' : 'Create account'}
           </button>
         </form>
 
         <p style={{ marginTop: 20, fontSize: 13, textAlign: 'center', color: '#64748b' }}>
-          No account?{' '}
-          <Link to="/signup" style={{ color: '#3b82f6', textDecoration: 'none' }}>Create one</Link>
+          Already have an account?{' '}
+          <Link to="/login" style={{ color: '#3b82f6', textDecoration: 'none' }}>Sign in</Link>
         </p>
       </div>
     </div>
@@ -85,7 +115,7 @@ const outer: CSSProperties = {
 };
 
 const card: CSSProperties = {
-  width: 360,
+  width: 380,
   background: '#fff',
   borderRadius: 12,
   boxShadow: '0 4px 24px rgba(0,0,0,.08)',

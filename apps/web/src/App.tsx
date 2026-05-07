@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth.js';
 import LoginPage from './pages/LoginPage.js';
+import SignUpPage from './pages/SignUpPage.js';
 import DashboardPage from './pages/DashboardPage.js';
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -25,6 +26,10 @@ export default function App() {
         <Route
           path="/login"
           element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>}
+        />
+        <Route
+          path="/signup"
+          element={<RedirectIfAuthed><SignUpPage /></RedirectIfAuthed>}
         />
         <Route
           path="/*"

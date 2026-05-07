@@ -19,12 +19,12 @@ export interface Contact {
 }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    credentials: 'include',
-  });
+  const init: RequestInit = { method, credentials: 'include' };
+  if (body !== undefined) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, init);
   const json = await res.json() as { success: boolean; data: T; error?: string };
   if (!res.ok || !json.success) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json.data;

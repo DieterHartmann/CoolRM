@@ -19,6 +19,19 @@ export async function getSession(): Promise<SessionUser | null> {
   }
 }
 
+export async function signUp(email: string, password: string, name: string): Promise<void> {
+  const res = await fetch('/api/auth/sign-up/email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, name, companyName: name }),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const json = await res.json() as { message?: string; error?: string };
+    throw new Error(json.message ?? json.error ?? 'Sign up failed');
+  }
+}
+
 export async function signIn(email: string, password: string): Promise<void> {
   const res = await fetch('/api/auth/sign-in/email', {
     method: 'POST',
