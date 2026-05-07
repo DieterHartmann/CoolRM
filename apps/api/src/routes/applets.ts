@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { randomBytes } from 'crypto';
 import { z } from 'zod';
-import { getPlatformClient } from '@crm/db';
+import { getPlatformClient, getTenantClient, getTenantSchemaName } from '@crm/db';
 import { config } from '../config.js';
 
 const createBody = z.object({
@@ -33,6 +33,41 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
         applets: applets.map((a) => ({ ...a, embedCode: embedCode(a.widgetKey) })),
       },
     };
+  });
+
+  // GET /api/v1/applets/:id/contacts — list contacts for an applet (from tenant schema)
+  app.get('/:id/contacts', async (request, reply) => {
+    const tenantId = request.sessionUser!.tenantId;
+    if (!tenantId) {
+      return reply.status(403).send({ success: false, error: 'Tenant not provisioned yet' });
+    }
+
+    const { id } = request.params as { id: string };
+    const db = getPlatformClient();
+
+    const applet = await db.applet.findUnique({
+      where: { id },
+      select: { tenantId: true },
+    });
+
+    if (!applet || applet.tenantId !== tenantId) {
+      return reply.status(404).send({ success: false, error: 'Applet not found' });
+    }
+
+    const schemaName = getTenantSchemaName(tenantId);
+    const tenantDb = getTenantClient(schemaName);
+
+    const contacts = await tenantDb.contact.findMany({
+      where: { appletId: id, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: {
+        id: true, refNumber: true, name: true, email: true,
+        phone: true, message: true, status: true, createdAt: true,
+      },
+    });
+
+    return { success: true, data: { contacts } };
   });
 
   // POST /api/v1/applets — create a new applet
