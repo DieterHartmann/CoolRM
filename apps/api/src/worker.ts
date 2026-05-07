@@ -1,6 +1,6 @@
 import './config.js';
 import { Worker, Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis as IORedis } from 'ioredis';
 import { config } from './config.js';
 import { disconnectPlatformClient, disconnectAllTenantClients } from '@crm/db';
 

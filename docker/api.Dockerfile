@@ -16,6 +16,7 @@ COPY apps/api ./apps/api
 COPY packages/db ./packages/db
 COPY packages/shared ./packages/shared
 RUN pnpm --filter @crm/db generate
+RUN pnpm --filter @crm/db build
 RUN pnpm --filter @crm/shared build
 RUN pnpm --filter @crm/api build
 
