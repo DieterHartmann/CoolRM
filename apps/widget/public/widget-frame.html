@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contact us</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      color: #1f2937;
+      background: #fff;
+      padding: 24px;
+    }
+    h2 { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #111827; }
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 13px; font-weight: 500; color: #374151; margin-bottom: 4px; }
+    .req { color: #ef4444; margin-left: 2px; }
+    input, textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 15px;
+      font-family: inherit;
+      color: #1f2937;
+      background: #fff;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+      -webkit-appearance: none;
+    }
+    input:focus, textarea:focus {
+      border-color: #6d28d9;
+      box-shadow: 0 0 0 3px rgba(109,40,217,0.12);
+    }
+    textarea { resize: vertical; min-height: 90px; }
+    .btn {
+      width: 100%;
+      padding: 11px;
+      background: #6d28d9;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-top: 6px;
+    }
+    .btn:hover:not(:disabled) { background: #5b21b6; }
+    .btn:disabled { background: #a78bfa; cursor: not-allowed; }
+    .err { font-size: 13px; color: #ef4444; margin-top: 10px; display: none; }
+    .err.show { display: block; }
+
+    #success { text-align: center; padding: 40px 16px; display: none; }
+    #success.show { display: block; }
+    .check-circle {
+      width: 56px; height: 56px;
+      background: #ede9fe;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 16px;
+      font-size: 26px;
+      color: #6d28d9;
+    }
+    #success h2 { font-size: 18px; margin-bottom: 8px; }
+    #success p { color: #6b7280; font-size: 14px; }
+    .ref-badge {
+      display: inline-block;
+      background: #ede9fe;
+      color: #6d28d9;
+      font-family: ui-monospace, monospace;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin: 12px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="form-wrap">
+    <h2>Get in touch</h2>
+    <form id="form" novalidate>
+      <div class="field">
+        <label for="f-name">Name<span class="req">*</span></label>
+        <input id="f-name" type="text" autocomplete="name" placeholder="Your name">
+      </div>
+      <div class="field">
+        <label for="f-email">Email<span class="req">*</span></label>
+        <input id="f-email" type="email" autocomplete="email" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label for="f-phone">Phone</label>
+        <input id="f-phone" type="tel" autocomplete="tel" placeholder="Optional">
+      </div>
+      <div class="field">
+        <label for="f-message">Message<span class="req">*</span></label>
+        <textarea id="f-message" rows="4" placeholder="How can we help?"></textarea>
+      </div>
+      <button class="btn" type="submit" id="btn">Send message</button>
+      <div class="err" id="err"></div>
+    </form>
+  </div>
+
+  <div id="success">
+    <div class="check-circle">✓</div>
+    <h2>Message received!</h2>
+    <div class="ref-badge" id="ref-badge"></div>
+    <p>We'll be in touch soon. Keep your reference number handy.</p>
+  </div>
+
+  <script>
+    var key = new URLSearchParams(location.search).get('key');
+    var btn = document.getElementById('btn');
+    var errEl = document.getElementById('err');
+    var formWrap = document.getElementById('form-wrap');
+    var successEl = document.getElementById('success');
+    var refBadge = document.getElementById('ref-badge');
+
+    function sendHeight() {
+      var h = document.body.scrollHeight;
+      window.parent.postMessage({ crmHeight: h }, '*');
+    }
+
+    // Send initial height once layout is stable
+    window.addEventListener('load', function() { setTimeout(sendHeight, 50); });
+
+    document.getElementById('form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      errEl.className = 'err';
+      errEl.textContent = '';
+
+      var name = document.getElementById('f-name').value.trim();
+      var email = document.getElementById('f-email').value.trim();
+      var phone = document.getElementById('f-phone').value.trim();
+      var message = document.getElementById('f-message').value.trim();
+
+      if (!name) { showErr('Name is required.'); return; }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('Please enter a valid email address.'); return; }
+      if (!message) { showErr('Please enter a message.'); return; }
+      if (!key) { showErr('Widget configuration error. Please contact the site owner.'); return; }
+
+      var body = { widget_key: key, name: name, email: email, message: message };
+      if (phone) body.phone = phone;
+
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+
+      try {
+        var res = await fetch('/api/v1/contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Something went wrong. Please try again.');
+        }
+        refBadge.textContent = data.data.ref;
+        formWrap.style.display = 'none';
+        successEl.className = 'show';
+        sendHeight();
+      } catch(err) {
+        showErr(err.message || 'Something went wrong. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Send message';
+      }
+    });
+
+    function showErr(msg) {
+      errEl.textContent = msg;
+      errEl.className = 'err show';
+      sendHeight();
+    }
+  </script>
+</body>
+</html>
