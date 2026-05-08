@@ -40,6 +40,7 @@ export const auth = betterAuth({
   secret: config.JWT_SECRET,
   baseURL: config.API_URL,
   basePath: '/api/auth',
+  trustedOrigins: config.ALLOWED_ORIGINS.split(',').map((o) => o.trim()),
 
   emailAndPassword: {
     enabled: true,
