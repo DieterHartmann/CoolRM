@@ -25,13 +25,16 @@ jobs:
           echo "${{ secrets.PI_SSH_KEY }}" > ~/.ssh/pi_key
           chmod 600 ~/.ssh/pi_key
 
+      - name: Check Tailscale
+        run: tailscale status
+
       - name: Deploy
         env:
           PI_HOST: ${{ secrets.PI_HOST }}
           PI_USER: ${{ secrets.PI_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/pi_key \
+          ssh -v -o StrictHostKeyChecking=no -i ~/.ssh/pi_key \
             -o ConnectTimeout=30 \
             "$PI_USER@$PI_HOST" \
             "set -e
