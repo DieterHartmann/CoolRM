@@ -21,8 +21,13 @@ function assertSafeIdentifier(name: string): void {
 function parseSqlStatements(sql: string): string[] {
   return sql
     .split(';')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith('--'));
+    .map((s) =>
+      s.split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n')
+        .trim(),
+    )
+    .filter((s) => s.length > 0);
 }
 
 export interface ProvisionResult {
@@ -85,7 +90,7 @@ export async function provisionTenant(
   );
   const statements = parseSqlStatements(initSql);
 
-  await platform.$transaction(async (tx) => {
+  await platform.$transaction(async (tx: { $executeRawUnsafe: (sql: string) => Promise<unknown> }) => {
     await tx.$executeRawUnsafe(`SET LOCAL search_path TO "${schemaName}"`);
     for (const stmt of statements) {
       await tx.$executeRawUnsafe(stmt);
@@ -93,14 +98,11 @@ export async function provisionTenant(
   });
 
   // Step 3: Grant table-level permissions AFTER tables exist.
-  await platform.$executeRawUnsafe(`
-    GRANT ALL ON ALL TABLES IN SCHEMA "${schemaName}" TO "${schemaName}";
-    GRANT ALL ON ALL SEQUENCES IN SCHEMA "${schemaName}" TO "${schemaName}";
-    ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}"
-      GRANT ALL ON TABLES TO "${schemaName}";
-    ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}"
-      GRANT ALL ON SEQUENCES TO "${schemaName}"
-  `);
+  // Each statement must be a separate call — $executeRawUnsafe rejects multiple statements (P42601).
+  await platform.$executeRawUnsafe(`GRANT ALL ON ALL TABLES IN SCHEMA "${schemaName}" TO "${schemaName}"`);
+  await platform.$executeRawUnsafe(`GRANT ALL ON ALL SEQUENCES IN SCHEMA "${schemaName}" TO "${schemaName}"`);
+  await platform.$executeRawUnsafe(`ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT ALL ON TABLES TO "${schemaName}"`);
+  await platform.$executeRawUnsafe(`ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT ALL ON SEQUENCES TO "${schemaName}"`);
 
   return { schemaName };
 }
