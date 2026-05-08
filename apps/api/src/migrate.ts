@@ -1,10 +1,11 @@
-// Runs platform schema migrations at startup.
-// Uses the Prisma client directly (no CLI) — reads the migration SQL and
-// executes it. All statements use IF NOT EXISTS so this is fully idempotent.
+// Runs platform schema migrations at startup, then re-provisions every known
+// tenant. All DDL uses IF NOT EXISTS — safe to run on every container start.
+// After a volume wipe this recreates the platform schema; existing tenants
+// get their per-tenant schemas recreated automatically.
 import { readFileSync, readdirSync, statSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getPlatformClient, disconnectPlatformClient } from '@crm/db';
+import { getPlatformClient, disconnectPlatformClient, provisionTenant } from '@crm/db';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(
@@ -57,6 +58,28 @@ async function run(): Promise<void> {
 
     await db.$executeRaw`INSERT INTO _crm_migrations (name) VALUES (${name})`;
     console.info(`[migrate] done: ${name}`);
+  }
+
+  // Re-provision all known tenants. provisionTenant is fully idempotent —
+  // every CREATE uses IF NOT EXISTS. On a fresh start there are no tenants yet;
+  // after a volume wipe with existing data restored, schemas are recreated here.
+  const appDbUser = process.env['APP_DB_USER'];
+  if (!appDbUser) {
+    console.error('[migrate] FATAL: APP_DB_USER env var is not set');
+    process.exit(1);
+  }
+
+  const tenants = await db.$queryRaw<{ id: string }[]>`SELECT id FROM tenant`;
+  if (tenants.length > 0) {
+    console.info(`[migrate] re-provisioning ${tenants.length} tenant schema(s)`);
+    for (const t of tenants) {
+      try {
+        await provisionTenant(t.id, appDbUser);
+        console.info(`[migrate] provisioned tenant: ${t.id}`);
+      } catch (err) {
+        console.error(`[migrate] failed to provision tenant ${t.id}:`, err);
+      }
+    }
   }
 
   await disconnectPlatformClient();
