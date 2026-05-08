@@ -3,6 +3,11 @@
 // at provisioning time via prisma/tenant/init.sql (generated from this file).
 // At runtime, a PrismaClient is instantiated with ?schema=tenant_XXXXXXXX in the
 // connection URL, which sets search_path to the correct tenant schema.
+//
+// Enum fields use String instead of Prisma enum types. PostgreSQL enum types
+// are hard to migrate and require matching CREATE TYPE declarations in init.sql.
+// Data integrity is enforced by CHECK constraints in init.sql; TypeScript union
+// types enforce correctness at the application layer.
 
 generator client {
   provider      = "prisma-client-js"
@@ -18,26 +23,20 @@ datasource db {
 }
 
 model Contact {
-  id        String        @id @default(uuid())
-  appletId  String        @map("applet_id")
-  refNumber String        @unique @map("ref_number")
+  id        String    @id @default(uuid())
+  appletId  String    @map("applet_id")
+  refNumber String    @unique @map("ref_number")
   name      String
   email     String
   phone     String?
   message   String
-  status    ContactStatus @default(new)
-  deletedAt DateTime?     @map("deleted_at") @db.Timestamptz(6)
-  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  status    String    @default("new")
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   threads Thread[]
 
   @@map("contacts")
-}
-
-enum ContactStatus {
-  new
-  open
-  resolved
 }
 
 model Thread {
@@ -53,27 +52,22 @@ model Thread {
 }
 
 model Message {
-  id             String           @id @default(uuid())
-  threadId       String           @map("thread_id")
-  direction      MessageDirection
-  fromAddress    String           @map("from_address")
-  toAddress      String           @map("to_address")
+  id             String    @id @default(uuid())
+  threadId       String    @map("thread_id")
+  direction      String
+  fromAddress    String    @map("from_address")
+  toAddress      String    @map("to_address")
   subject        String
-  bodyHtml       String?          @map("body_html")
-  bodyText       String?          @map("body_text")
-  sentAt         DateTime         @map("sent_at") @db.Timestamptz(6)
-  emailMessageId String?          @unique @map("email_message_id")
-  hasRef         Boolean          @default(false) @map("has_ref")
+  bodyHtml       String?   @map("body_html")
+  bodyText       String?   @map("body_text")
+  sentAt         DateTime  @map("sent_at") @db.Timestamptz(6)
+  emailMessageId String?   @unique @map("email_message_id")
+  hasRef         Boolean   @default(false) @map("has_ref")
 
   thread      Thread       @relation(fields: [threadId], references: [id])
   attachments Attachment[]
 
   @@map("messages")
-}
-
-enum MessageDirection {
-  inbound
-  outbound
 }
 
 model Attachment {
@@ -90,18 +84,12 @@ model Attachment {
 }
 
 model EmailAccount {
-  id          String        @id @default(uuid())
-  appletId    String        @map("applet_id")
-  provider    EmailProvider
-  oauthTokens String?       @map("oauth_tokens")
-  smtpConfig  Json?         @map("smtp_config")
-  lastSyncAt  DateTime?     @map("last_sync_at") @db.Timestamptz(6)
+  id          String    @id @default(uuid())
+  appletId    String    @map("applet_id")
+  provider    String
+  oauthTokens String?   @map("oauth_tokens")
+  smtpConfig  Json?     @map("smtp_config")
+  lastSyncAt  DateTime? @map("last_sync_at") @db.Timestamptz(6)
 
   @@map("email_accounts")
-}
-
-enum EmailProvider {
-  gmail
-  outlook
-  imap
 }
