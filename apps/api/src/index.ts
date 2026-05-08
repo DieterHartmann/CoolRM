@@ -72,12 +72,15 @@ export async function buildApp() {
       }
 
       const webRes = await auth.handler(new Request(url, init));
+      const body = Buffer.from(await webRes.arrayBuffer());
 
-      reply.status(webRes.status);
-      webRes.headers.forEach((value, key) => {
-        reply.header(key, value);
-      });
-      return reply.send(Buffer.from(await webRes.arrayBuffer()));
+      const outHeaders: Record<string, string> = {};
+      webRes.headers.forEach((value, key) => { outHeaders[key] = value; });
+
+      // Bypass Fastify serialization — write directly to the Node.js stream
+      reply.hijack();
+      reply.raw.writeHead(webRes.status, outHeaders);
+      reply.raw.end(body);
     },
   });
 
