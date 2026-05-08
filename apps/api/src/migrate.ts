@@ -69,7 +69,7 @@ async function run(): Promise<void> {
     process.exit(1);
   }
 
-  const tenants = await db.$queryRaw<{ id: string }[]>`SELECT id FROM tenant`;
+  const tenants = await db.$queryRaw<{ id: string }[]>`SELECT id FROM tenants`;
   if (tenants.length > 0) {
     console.info(`[migrate] re-provisioning ${tenants.length} tenant schema(s)`);
     for (const t of tenants) {
