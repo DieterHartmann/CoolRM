@@ -4,7 +4,6 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import rateLimit from '@fastify/rate-limit';
-import { toNodeHandler } from 'better-auth/node';
 import { config } from './config.js';
 import { auth } from './auth.js';
 import { getTenantSchemaName, disconnectPlatformClient, disconnectAllTenantClients } from '@crm/db';
@@ -40,10 +39,7 @@ export async function buildApp() {
 
   await app.register(rateLimit, { global: false });
 
-  // ── Better Auth ────────────────────────────────────────────────────────────
-  // Better Auth handles its own body parsing via the Node handler.
-  // We disable Fastify's JSON parser for the /api/auth/* path so the raw
-  // stream reaches Better Auth intact.
+  // ── Body parser ────────────────────────────────────────────────────────────
   app.addContentTypeParser(
     'application/json',
     { parseAs: 'string' },
@@ -56,14 +52,32 @@ export async function buildApp() {
     },
   );
 
-  const betterAuthHandler = toNodeHandler(auth);
-
   app.route({
     method: ['GET', 'POST'],
     url: '/api/auth/*',
     handler: async (request, reply) => {
-      await betterAuthHandler(request.raw, reply.raw);
-      reply.hijack();
+      // Fastify's content-type parser consumes request.raw before this handler
+      // runs, so toNodeHandler would see an empty stream. Instead we use
+      // auth.handler (Web API) and reconstruct the Request from request.body.
+      const headers = new Headers();
+      for (const [k, v] of Object.entries(request.headers)) {
+        if (typeof v === 'string') headers.set(k, v);
+        else if (Array.isArray(v)) headers.set(k, v.join(', '));
+      }
+
+      const url = `http://localhost:${config.PORT}${request.url}`;
+      const init: RequestInit = { method: request.method, headers };
+      if (request.body !== undefined && request.body !== null) {
+        init.body = JSON.stringify(request.body);
+      }
+
+      const webRes = await auth.handler(new Request(url, init));
+
+      reply.status(webRes.status);
+      webRes.headers.forEach((value, key) => {
+        reply.header(key, value);
+      });
+      return reply.send(Buffer.from(await webRes.arrayBuffer()));
     },
   });
 
