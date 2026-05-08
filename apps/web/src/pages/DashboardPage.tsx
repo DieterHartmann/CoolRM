@@ -102,6 +102,12 @@ export default function DashboardPage() {
           ))}
         </nav>
 
+        {error && (
+          <div style={{ margin: '0 8px 4px', padding: '8px 10px', background: '#7f1d1d', borderRadius: 6, fontSize: 12, color: '#fca5a5' }}>
+            {error}
+          </div>
+        )}
+
         <div style={{ padding: '8px 8px 4px' }}>
           {showCreate ? (
             <form onSubmit={handleCreate} style={{ padding: '0 4px' }}>
