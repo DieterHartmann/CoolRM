@@ -180,7 +180,7 @@ export default function DashboardPage() {
                 </div>
               )}
               {tab === 'contacts' && (
-                <ContactsPanel contacts={contacts} loading={loadingContacts} />
+                <ContactsPanel contacts={contacts} loading={loadingContacts} appletId={selected.id} />
               )}
               {tab === 'embed' && (
                 <EmbedPanel embedCode={selected.embedCode} copied={copied} onCopy={copyEmbed} />
@@ -203,7 +203,21 @@ function EmptyState({ hasApplets }: { hasApplets: boolean }) {
   );
 }
 
-function ContactsPanel({ contacts, loading }: { contacts: Contact[]; loading: boolean }) {
+function ContactsPanel({ contacts: initial, loading, appletId }: { contacts: Contact[]; loading: boolean; appletId: string }) {
+  const [contacts, setContacts] = useState(initial);
+
+  useEffect(() => { setContacts(initial); }, [initial]);
+
+  async function cycleStatus(c: Contact) {
+    const next: Contact['status'] = c.status === 'new' ? 'open' : c.status === 'open' ? 'resolved' : 'new';
+    setContacts(prev => prev.map(x => x.id === c.id ? { ...x, status: next } : x));
+    try {
+      await api.updateContactStatus(appletId, c.id, next);
+    } catch {
+      setContacts(prev => prev.map(x => x.id === c.id ? { ...x, status: c.status } : x));
+    }
+  }
+
   if (loading) {
     return <div style={{ color: '#94a3b8', fontSize: 14 }}>Loading contacts…</div>;
   }
@@ -231,7 +245,7 @@ function ContactsPanel({ contacts, loading }: { contacts: Contact[]; loading: bo
               <td style={td}>{c.name}</td>
               <td style={td}>{c.email}</td>
               <td style={{ ...td, color: '#64748b' }}>{c.phone ?? '—'}</td>
-              <td style={td}><StatusBadge status={c.status} /></td>
+              <td style={td}><StatusBadge status={c.status} onClick={() => cycleStatus(c)} /></td>
               <td style={{ ...td, color: '#64748b', whiteSpace: 'nowrap' }}>{formatDate(c.createdAt)}</td>
             </tr>
           ))}
@@ -247,18 +261,24 @@ function statusStyle(status: Contact['status']): { bg: string; color: string; la
   return { bg: '#f0fdf4', color: '#166534', label: 'Resolved' };
 }
 
-function StatusBadge({ status }: { status: Contact['status'] }) {
+function StatusBadge({ status, onClick }: { status: Contact['status']; onClick?: () => void }) {
   const s = statusStyle(status);
   return (
-    <span style={{
-      display: 'inline-block',
-      padding: '2px 8px',
-      borderRadius: 999,
-      fontSize: 11,
-      fontWeight: 600,
-      background: s.bg,
-      color: s.color,
-    }}>
+    <span
+      onClick={onClick}
+      title="Click to advance status"
+      style={{
+        display: 'inline-block',
+        padding: '2px 8px',
+        borderRadius: 999,
+        fontSize: 11,
+        fontWeight: 600,
+        background: s.bg,
+        color: s.color,
+        cursor: onClick ? 'pointer' : 'default',
+        userSelect: 'none',
+      }}
+    >
       {s.label}
     </span>
   );

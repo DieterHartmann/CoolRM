@@ -70,6 +70,39 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
     return { success: true, data: { contacts } };
   });
 
+  // PATCH /api/v1/applets/:id/contacts/:contactId/status — update contact status
+  app.patch('/:id/contacts/:contactId/status', async (request, reply) => {
+    const tenantId = request.sessionUser!.tenantId;
+    if (!tenantId) {
+      return reply.status(403).send({ success: false, error: 'Tenant not provisioned yet' });
+    }
+
+    const { id, contactId } = request.params as { id: string; contactId: string };
+    const body = request.body as { status?: string };
+    const status = body.status;
+
+    if (status !== 'new' && status !== 'open' && status !== 'resolved') {
+      return reply.status(400).send({ success: false, error: 'Invalid status' });
+    }
+
+    const db = getPlatformClient();
+    const applet = await db.applet.findUnique({ where: { id }, select: { tenantId: true } });
+    if (!applet || applet.tenantId !== tenantId) {
+      return reply.status(404).send({ success: false, error: 'Applet not found' });
+    }
+
+    const schemaName = getTenantSchemaName(tenantId);
+    const tenantDb = getTenantClient(schemaName);
+
+    const contact = await tenantDb.contact.update({
+      where: { id: contactId },
+      data: { status },
+      select: { id: true, status: true },
+    });
+
+    return { success: true, data: { contact } };
+  });
+
   // POST /api/v1/applets — create a new applet
   app.post('/', async (request, reply) => {
     const tenantId = request.sessionUser!.tenantId;

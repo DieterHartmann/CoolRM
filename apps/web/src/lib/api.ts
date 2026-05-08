@@ -37,4 +37,8 @@ export const api = {
     req<{ applet: Applet }>('POST', '/api/v1/applets', { name }),
   getContacts: (appletId: string) =>
     req<{ contacts: Contact[] }>('GET', `/api/v1/applets/${appletId}/contacts`),
+  updateContactStatus: (appletId: string, contactId: string, status: Contact['status']) =>
+    req<{ contact: { id: string; status: Contact['status'] } }>(
+      'PATCH', `/api/v1/applets/${appletId}/contacts/${contactId}/status`, { status },
+    ),
 };
