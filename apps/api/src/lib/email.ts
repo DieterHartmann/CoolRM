@@ -88,6 +88,47 @@ export async function sendNewContactEmail(
   });
 }
 
+export async function sendContactConfirmationEmail(
+  to: string,
+  tenantName: string,
+  contact: { ref: string; name: string; message: string },
+): Promise<void> {
+  const transporter = getTransporter();
+  const subject = `We received your message — ${contact.ref}`;
+
+  if (!transporter) {
+    console.info('[Email] Contact confirmation (no SMTP configured):', { to, subject });
+    return;
+  }
+
+  await transporter.sendMail({
+    from: config.SMTP_FROM ?? config.SMTP_USER,
+    to,
+    subject,
+    text: [
+      `Hi ${contact.name},`,
+      ``,
+      `Thanks for reaching out to ${tenantName}. We've received your message and will be in touch soon.`,
+      ``,
+      `Your reference number is ${contact.ref} — keep it handy if you need to follow up.`,
+      ``,
+      `— ${tenantName}`,
+    ].join('\n'),
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+        <h2 style="color:#1f2937">Message received!</h2>
+        <p>Hi ${contact.name},</p>
+        <p>Thanks for reaching out to <strong>${tenantName}</strong>. We've received your message and will be in touch soon.</p>
+        <div style="margin:20px 0;padding:14px 18px;background:#ede9fe;border-radius:8px;text-align:center">
+          <span style="font-family:monospace;font-size:18px;font-weight:700;color:#6d28d9">${contact.ref}</span>
+          <p style="margin:6px 0 0;font-size:13px;color:#7c3aed">Keep this reference number handy</p>
+        </div>
+        <p style="color:#6b7280;font-size:13px">If you have questions, just reply to this email and include your reference number.</p>
+      </div>
+    `,
+  });
+}
+
 export async function sendPasswordResetEmail(to: string, url: string): Promise<void> {
   const transporter = getTransporter();
 

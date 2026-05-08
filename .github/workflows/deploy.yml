@@ -7,26 +7,33 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    timeout-minutes: 30
 
-      - name: Deploy via Tailscale SSH
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          hostname: github-actions-deploy
+
+      - name: Write SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PI_SSH_KEY }}" > ~/.ssh/pi_key
+          chmod 600 ~/.ssh/pi_key
+
+      - name: Deploy
         env:
-          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
           PI_HOST: ${{ secrets.PI_HOST }}
           PI_USER: ${{ secrets.PI_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
-          sudo tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname=github-actions
-          sleep 5
-
-          ssh -o StrictHostKeyChecking=no "$PI_USER@$PI_HOST" \
-            "set -e && \
-             cd '$DEPLOY_PATH' && \
-             git pull origin main && \
-             docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d && \
-             docker image prune -f"
-
-          sudo tailscale logout
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/pi_key \
+            -o ConnectTimeout=30 \
+            "$PI_USER@$PI_HOST" \
+            "set -e
+             cd '$DEPLOY_PATH'
+             git pull origin main
+             docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+             docker image prune -f
+             echo 'Deploy done'"

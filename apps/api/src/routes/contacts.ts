@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { getPlatformClient, getTenantClient, getTenantSchemaName, nextRefNumber } from '@crm/db';
-import { sendNewContactEmail } from '../lib/email.js';
+import { sendNewContactEmail, sendContactConfirmationEmail } from '../lib/email.js';
 
 const submitBody = z.object({
   widget_key: z.string().startsWith('wk_', 'Invalid widget key'),
@@ -31,7 +31,7 @@ const contactRoutes: FastifyPluginAsync = async (app) => {
 
     const applet = await db.applet.findUnique({
       where: { widgetKey: widget_key },
-      include: { tenant: { select: { id: true, ownerEmail: true } } },
+      include: { tenant: { select: { id: true, ownerEmail: true, companyName: true } } },
     });
 
     if (!applet || !applet.isActive) {
@@ -59,6 +59,9 @@ const contactRoutes: FastifyPluginAsync = async (app) => {
       ref, name, email, message,
       ...(phone !== undefined ? { phone } : {}),
     }).catch((err: unknown) => console.error('[Contacts] Notification email failed', { err }));
+
+    sendContactConfirmationEmail(email, applet.tenant.companyName, { ref, name, message })
+      .catch((err: unknown) => console.error('[Contacts] Confirmation email failed', { err }));
 
     return reply.status(201).send({ success: true, data: { ref } });
   });
