@@ -55,7 +55,10 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
     callbackURL: config.FRONTEND_URL,
     sendVerificationEmail: async ({ user, url }) => {
-      await sendVerificationEmail(user.email, url);
+      // Force callbackURL to the frontend — Better Auth may not include it
+      const verifyUrl = new URL(url);
+      verifyUrl.searchParams.set('callbackURL', config.FRONTEND_URL);
+      await sendVerificationEmail(user.email, verifyUrl.toString());
     },
   },
 
