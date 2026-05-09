@@ -25,6 +25,23 @@ export interface Applet {
   fieldConfig: FieldDef[] | null;
 }
 
+export interface AppletAdmin {
+  id: string;
+  name: string;
+  widgetKey: string;
+  isActive: boolean;
+  contactCount: number;
+  createdAt: string;
+}
+
+export interface TenantAdmin {
+  id: string;
+  companyName: string;
+  ownerEmail: string;
+  createdAt: string;
+  applets: AppletAdmin[];
+}
+
 export interface Contact {
   id: string;
   refNumber: string;
@@ -61,4 +78,8 @@ export const api = {
     ),
   updateAppletFields: (appletId: string, fields: FieldDef[]) =>
     req<{ fields: FieldDef[] }>('PUT', `/api/v1/applets/${appletId}/fields`, { fields }),
+  getAdminTenants: () =>
+    req<{ tenants: TenantAdmin[] }>('GET', '/api/v1/admin/tenants'),
+  setAppletActive: (appletId: string, isActive: boolean) =>
+    req<{ applet: { id: string; isActive: boolean } }>('PATCH', `/api/v1/admin/applets/${appletId}/active`, { isActive }),
 };

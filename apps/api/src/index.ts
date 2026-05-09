@@ -10,6 +10,7 @@ import { getTenantSchemaName, disconnectPlatformClient, disconnectAllTenantClien
 import appletRoutes from './routes/applets.js';
 import contactRoutes from './routes/contacts.js';
 import widgetRoutes from './routes/widget.js';
+import adminRoutes from './routes/admin.js';
 
 // Extend Fastify's request type to carry session context
 declare module 'fastify' {
@@ -132,6 +133,7 @@ export async function buildApp() {
   await app.register(appletRoutes, { prefix: '/api/v1/applets' });
   await app.register(contactRoutes, { prefix: '/api/v1/contacts' });
   await app.register(widgetRoutes, { prefix: '/api/v1/widget' });
+  await app.register(adminRoutes, { prefix: '/api/v1/admin' });
 
   return app;
 }

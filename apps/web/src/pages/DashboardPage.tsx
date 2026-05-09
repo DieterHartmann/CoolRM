@@ -144,6 +144,11 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {user?.role === 'superadmin' && (
+          <a href="/admin" style={{ margin: '0 8px 4px', padding: '8px 10px', borderRadius: 6, display: 'block', fontSize: 12, color: '#7c3aed', textDecoration: 'none' }}>
+            ⚙ Admin panel
+          </a>
+        )}
         <button onClick={signOut} style={signOutBtn}>Sign out</button>
       </aside>
 
