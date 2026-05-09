@@ -1,7 +1,18 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { getPlatformClient, getTenantClient, getTenantSchemaName, nextRefNumber } from '@crm/db';
-import { sendNewContactEmail, sendContactConfirmationEmail } from '../lib/email.js';
+import { sendNewContactEmail, sendContactConfirmationEmail, createSmtpTransporter, TenantMailOptions } from '../lib/email.js';
+import { decrypt } from '../lib/crypto.js';
+
+interface SmtpConfigStored {
+  fromName: string;
+  fromEmail: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  encryptedPass: string;
+}
 
 const submitBody = z.object({
   widget_key: z.string().startsWith('wk_', 'Invalid widget key'),
@@ -55,14 +66,39 @@ const contactRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
-    // Fire-and-forget — don't fail the request if email delivery fails
-    sendNewContactEmail(applet.tenant.ownerEmail, applet.name, {
-      ref, name, email, message: message ?? '',
-      ...(phone !== undefined ? { phone } : {}),
-    }).catch((err: unknown) => console.error('[Contacts] Notification email failed', { err }));
+    // Fire-and-forget email pipeline — uses tenant SMTP if configured, falls back to platform
+    const sendEmails = async () => {
+      let tenantMail: TenantMailOptions | undefined;
+      try {
+        const account = await tenantDb.emailAccount.findFirst({ where: { appletId: applet.id } });
+        const cfg = account?.smtpConfig as unknown as SmtpConfigStored | undefined;
+        if (cfg?.encryptedPass) {
+          const pass = decrypt(cfg.encryptedPass);
+          tenantMail = {
+            transporter: createSmtpTransporter({ host: cfg.host, port: cfg.port, secure: cfg.secure, user: cfg.user, pass }),
+            from: cfg.fromName ? `${cfg.fromName} <${cfg.fromEmail}>` : cfg.fromEmail,
+          };
+        }
+      } catch (err) {
+        console.error('[Contacts] Could not load tenant SMTP config', err);
+      }
 
-    sendContactConfirmationEmail(email, applet.tenant.companyName, { ref, name, message: message ?? '' })
-      .catch((err: unknown) => console.error('[Contacts] Confirmation email failed', { err }));
+      await sendNewContactEmail(
+        applet.tenant.ownerEmail,
+        applet.name,
+        { ref, name, email, message: message ?? '', ...(phone !== undefined ? { phone } : {}) },
+        tenantMail,
+      );
+
+      await sendContactConfirmationEmail(
+        email,
+        applet.tenant.companyName,
+        { ref, name, message: message ?? '' },
+        tenantMail,
+      );
+    };
+
+    sendEmails().catch((err: unknown) => console.error('[Contacts] Email pipeline failed', { err }));
 
     return reply.status(201).send({ success: true, data: { ref } });
   });

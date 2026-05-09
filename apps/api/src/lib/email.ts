@@ -1,9 +1,14 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config.js';
 
+export interface TenantMailOptions {
+  transporter: nodemailer.Transporter;
+  from: string; // e.g. "Acme Support <support@acme.com>"
+}
+
 let _transporter: nodemailer.Transporter | null = null;
 
-function getTransporter(): nodemailer.Transporter | null {
+function getPlatformTransporter(): nodemailer.Transporter | null {
   if (_transporter) return _transporter;
   if (!config.SMTP_HOST) return null;
 
@@ -17,11 +22,25 @@ function getTransporter(): nodemailer.Transporter | null {
   return _transporter;
 }
 
+export function createSmtpTransporter(cfg: {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+}): nodemailer.Transporter {
+  return nodemailer.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: { user: cfg.user, pass: cfg.pass },
+  });
+}
+
 export async function sendVerificationEmail(to: string, url: string): Promise<void> {
-  const transporter = getTransporter();
+  const transporter = getPlatformTransporter();
 
   if (!transporter) {
-    // No SMTP configured — log to console (useful in dev)
     console.info('[Email] Verification link (no SMTP configured):', { to, url });
     return;
   }
@@ -51,8 +70,10 @@ export async function sendNewContactEmail(
   to: string,
   appletName: string,
   contact: { ref: string; name: string; email: string; phone?: string; message: string },
+  tenant?: TenantMailOptions,
 ): Promise<void> {
-  const transporter = getTransporter();
+  const transporter = tenant?.transporter ?? getPlatformTransporter();
+  const from = tenant?.from ?? config.SMTP_FROM ?? config.SMTP_USER;
   const subject = `New contact [${contact.ref}] via ${appletName}`;
 
   if (!transporter) {
@@ -61,7 +82,7 @@ export async function sendNewContactEmail(
   }
 
   await transporter.sendMail({
-    from: config.SMTP_FROM ?? config.SMTP_USER,
+    from,
     to,
     subject,
     text: [
@@ -92,8 +113,10 @@ export async function sendContactConfirmationEmail(
   to: string,
   tenantName: string,
   contact: { ref: string; name: string; message: string },
+  tenant?: TenantMailOptions,
 ): Promise<void> {
-  const transporter = getTransporter();
+  const transporter = tenant?.transporter ?? getPlatformTransporter();
+  const from = tenant?.from ?? config.SMTP_FROM ?? config.SMTP_USER;
   const subject = `We received your message — ${contact.ref}`;
 
   if (!transporter) {
@@ -102,7 +125,7 @@ export async function sendContactConfirmationEmail(
   }
 
   await transporter.sendMail({
-    from: config.SMTP_FROM ?? config.SMTP_USER,
+    from,
     to,
     subject,
     text: [
@@ -130,7 +153,7 @@ export async function sendContactConfirmationEmail(
 }
 
 export async function sendPasswordResetEmail(to: string, url: string): Promise<void> {
-  const transporter = getTransporter();
+  const transporter = getPlatformTransporter();
 
   if (!transporter) {
     console.info('[Email] Password reset link (no SMTP configured):', { to, url });

@@ -25,6 +25,27 @@ export interface Applet {
   fieldConfig: FieldDef[] | null;
 }
 
+export interface SmtpAccount {
+  id?: string;
+  fromName: string;
+  fromEmail: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  passwordSet: boolean;
+}
+
+export interface SmtpAccountInput {
+  fromName: string;
+  fromEmail: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password: string; // blank = keep existing
+}
+
 export interface AppletAdmin {
   id: string;
   name: string;
@@ -82,4 +103,12 @@ export const api = {
     req<{ tenants: TenantAdmin[] }>('GET', '/api/v1/admin/tenants'),
   setAppletActive: (appletId: string, isActive: boolean) =>
     req<{ applet: { id: string; isActive: boolean } }>('PATCH', `/api/v1/admin/applets/${appletId}/active`, { isActive }),
+  getEmailAccount: (appletId: string) =>
+    req<{ account: SmtpAccount | null }>('GET', `/api/v1/applets/${appletId}/email-account`),
+  saveEmailAccount: (appletId: string, data: SmtpAccountInput) =>
+    req<{ account: SmtpAccount }>('PUT', `/api/v1/applets/${appletId}/email-account`, data),
+  deleteEmailAccount: (appletId: string) =>
+    req<Record<string, never>>('DELETE', `/api/v1/applets/${appletId}/email-account`),
+  testEmailAccount: (appletId: string, data: SmtpAccountInput) =>
+    req<{ ok: boolean }>('POST', `/api/v1/applets/${appletId}/email-account/test`, data),
 };

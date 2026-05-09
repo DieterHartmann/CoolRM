@@ -1,8 +1,8 @@
 import { CSSProperties, FormEvent, useEffect, useState } from 'react';
-import { api, Applet, Contact, FieldDef, FieldType, DEFAULT_FIELDS } from '../lib/api.js';
+import { api, Applet, Contact, FieldDef, FieldType, DEFAULT_FIELDS, SmtpAccount, SmtpAccountInput } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 
-type Tab = 'contacts' | 'fields' | 'embed';
+type Tab = 'contacts' | 'fields' | 'email' | 'embed';
 
 const LOCKED_IDS = new Set(['name', 'email']);
 
@@ -163,7 +163,7 @@ export default function DashboardPage() {
               <div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b', padding: '16px 0', marginRight: 20, flexShrink: 0 }}>
                 {selected.name}
               </div>
-              {(['contacts', 'fields', 'embed'] as Tab[]).map(t => (
+              {(['contacts', 'fields', 'email', 'embed'] as Tab[]).map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -178,7 +178,7 @@ export default function DashboardPage() {
                     cursor: 'pointer',
                   }}
                 >
-                  {t === 'embed' ? 'Embed Code' : t === 'fields' ? 'Form Fields' : 'Contacts'}
+                  {t === 'embed' ? 'Embed Code' : t === 'fields' ? 'Form Fields' : t === 'email' ? 'Email' : 'Contacts'}
                 </button>
               ))}
             </div>
@@ -198,6 +198,9 @@ export default function DashboardPage() {
                   applet={selected}
                   onSaved={(fields) => handleFieldsSaved(selected.id, fields)}
                 />
+              )}
+              {tab === 'email' && (
+                <EmailPanel appletId={selected.id} />
               )}
               {tab === 'embed' && (
                 <EmbedPanel embedCode={selected.embedCode} copied={copied} onCopy={copyEmbed} />
@@ -443,6 +446,157 @@ function FieldsPanel({ applet, onSaved }: { applet: Applet; onSaved: (fields: Fi
   );
 }
 
+function EmailPanel({ appletId }: { appletId: string }) {
+  const [account, setAccount] = useState<SmtpAccount | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState<SmtpAccountInput>({
+    fromName: '', fromEmail: '', host: '', port: 587, secure: false, user: '', password: '',
+  });
+  const [status, setStatus] = useState<'idle' | 'testing' | 'saving' | 'ok' | 'error'>('idle');
+  const [statusMsg, setStatusMsg] = useState('');
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setStatus('idle');
+    setStatusMsg('');
+    api.getEmailAccount(appletId)
+      .then(({ account: a }) => {
+        setAccount(a);
+        if (a) {
+          setForm({ fromName: a.fromName, fromEmail: a.fromEmail, host: a.host, port: a.port, secure: a.secure, user: a.user, password: '' });
+        } else {
+          setForm({ fromName: '', fromEmail: '', host: '', port: 587, secure: false, user: '', password: '' });
+        }
+      })
+      .catch(() => setStatusMsg('Failed to load email account'))
+      .finally(() => setLoading(false));
+  }, [appletId]);
+
+  function set(patch: Partial<SmtpAccountInput>) {
+    setForm(prev => ({ ...prev, ...patch }));
+  }
+
+  async function test() {
+    if (!form.password && !account?.passwordSet) { setStatus('error'); setStatusMsg('Enter a password to test.'); return; }
+    setStatus('testing'); setStatusMsg('');
+    try {
+      const payload = { ...form, ...(form.password ? {} : { password: '(unchanged)' }) };
+      await api.testEmailAccount(appletId, payload);
+      setStatus('ok'); setStatusMsg('Connection successful!');
+    } catch (err) {
+      setStatus('error'); setStatusMsg(err instanceof Error ? err.message : 'Connection failed');
+    }
+  }
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!form.password && !account?.passwordSet) { setStatus('error'); setStatusMsg('Password is required.'); return; }
+    setStatus('saving'); setStatusMsg('');
+    try {
+      const { account: saved } = await api.saveEmailAccount(appletId, form);
+      setAccount(saved);
+      setForm(prev => ({ ...prev, password: '' }));
+      setStatus('ok'); setStatusMsg('Saved successfully!');
+      setTimeout(() => setStatus('idle'), 3000);
+    } catch (err) {
+      setStatus('error'); setStatusMsg(err instanceof Error ? err.message : 'Failed to save');
+    }
+  }
+
+  async function disconnect() {
+    setDisconnecting(true);
+    try {
+      await api.deleteEmailAccount(appletId);
+      setAccount(null);
+      setForm({ fromName: '', fromEmail: '', host: '', port: 587, secure: false, user: '', password: '' });
+      setStatus('idle'); setStatusMsg('');
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : 'Failed to disconnect');
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  if (loading) return <div style={{ color: '#94a3b8', fontSize: 14 }}>Loading…</div>;
+
+  return (
+    <div style={{ maxWidth: 520 }}>
+      <h2 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: '#1e293b' }}>Email Account</h2>
+      <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b' }}>
+        Send notification and confirmation emails from your own address. Falls back to the platform email if not set.
+      </p>
+
+      {account && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+          <span style={{ fontSize: 13, color: '#166534', flex: 1 }}>✓ Connected — <strong>{account.fromEmail}</strong></span>
+          <button onClick={disconnect} disabled={disconnecting} style={{ fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+          </button>
+        </div>
+      )}
+
+      <form onSubmit={save}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>From name</label>
+            <input value={form.fromName} onChange={e => set({ fromName: e.target.value })} placeholder="Acme Support" style={inputStyle} required />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>From email</label>
+            <input value={form.fromEmail} onChange={e => set({ fromEmail: e.target.value })} placeholder="support@acme.com" type="email" style={inputStyle} required />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={labelStyle}>SMTP host</label>
+          <input value={form.host} onChange={e => set({ host: e.target.value })} placeholder="smtp.gmail.com" style={inputStyle} required />
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'flex-end' }}>
+          <div style={{ width: 100 }}>
+            <label style={labelStyle}>Port</label>
+            <input
+              value={form.port}
+              onChange={e => { const p = parseInt(e.target.value, 10); set({ port: isNaN(p) ? 587 : p, secure: p === 465 }); }}
+              type="number" min={1} max={65535} style={inputStyle} required
+            />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#475569', marginBottom: 1, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.secure} onChange={e => set({ secure: e.target.checked })} />
+            Use TLS
+          </label>
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={labelStyle}>Username</label>
+          <input value={form.user} onChange={e => set({ user: e.target.value })} placeholder="support@acme.com" style={inputStyle} required />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Password{account?.passwordSet ? ' (leave blank to keep existing)' : ''}</label>
+          <input value={form.password} onChange={e => set({ password: e.target.value })} type="password" placeholder={account?.passwordSet ? '••••••••' : 'App password or SMTP password'} style={inputStyle} />
+        </div>
+
+        {statusMsg && (
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 6, fontSize: 13, background: status === 'error' ? '#fef2f2' : '#f0fdf4', color: status === 'error' ? '#dc2626' : '#166534' }}>
+            {statusMsg}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={test} disabled={status === 'testing' || status === 'saving'} style={{ ...cancelBtn, color: '#475569' }}>
+            {status === 'testing' ? 'Testing…' : 'Test connection'}
+          </button>
+          <button type="submit" disabled={status === 'saving' || status === 'testing'} style={saveBtn}>
+            {status === 'saving' ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function statusStyle(status: Contact['status']): { bg: string; color: string; label: string } {
   if (status === 'new')  return { bg: '#eff6ff', color: '#1d4ed8', label: 'New' };
   if (status === 'open') return { bg: '#fefce8', color: '#a16207', label: 'Open' };
@@ -670,4 +824,25 @@ const saveBtn: CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   cursor: 'pointer',
+};
+
+const labelStyle: CSSProperties = {
+  display: 'block',
+  fontSize: 12,
+  fontWeight: 500,
+  color: '#475569',
+  marginBottom: 4,
+};
+
+const inputStyle: CSSProperties = {
+  width: '100%',
+  padding: '8px 10px',
+  border: '1px solid #e2e8f0',
+  borderRadius: 6,
+  fontSize: 13,
+  fontFamily: 'inherit',
+  color: '#1e293b',
+  background: '#fff',
+  outline: 'none',
+  boxSizing: 'border-box',
 };
