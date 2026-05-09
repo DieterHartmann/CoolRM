@@ -134,7 +134,8 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
 
     await db.applet.update({
       where: { id },
-      data: { fieldConfig: fields },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      data: { fieldConfig: JSON.parse(JSON.stringify(fields)) },
     });
 
     return { success: true, data: { fields } };
