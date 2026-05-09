@@ -9,6 +9,7 @@ import { auth } from './auth.js';
 import { getTenantSchemaName, disconnectPlatformClient, disconnectAllTenantClients } from '@crm/db';
 import appletRoutes from './routes/applets.js';
 import contactRoutes from './routes/contacts.js';
+import widgetRoutes from './routes/widget.js';
 
 // Extend Fastify's request type to carry session context
 declare module 'fastify' {
@@ -91,7 +92,8 @@ export async function buildApp() {
     if (
       request.url.startsWith('/api/auth') ||
       request.url === '/health' ||
-      request.url.startsWith('/api/v1/contacts')
+      request.url.startsWith('/api/v1/contacts') ||
+      request.url.startsWith('/api/v1/widget/')
     ) {
       return;
     }
@@ -129,6 +131,7 @@ export async function buildApp() {
 
   await app.register(appletRoutes, { prefix: '/api/v1/applets' });
   await app.register(contactRoutes, { prefix: '/api/v1/contacts' });
+  await app.register(widgetRoutes, { prefix: '/api/v1/widget' });
 
   return app;
 }

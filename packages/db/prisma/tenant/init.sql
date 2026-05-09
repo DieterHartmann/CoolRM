@@ -8,17 +8,18 @@
 CREATE SEQUENCE IF NOT EXISTS contact_ref_seq START 1;
 
 CREATE TABLE IF NOT EXISTS contacts (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  applet_id   UUID        NOT NULL,
-  ref_number  TEXT        NOT NULL,
-  name        TEXT        NOT NULL,
-  email       TEXT        NOT NULL,
-  phone       TEXT,
-  message     TEXT        NOT NULL,
-  status      TEXT        NOT NULL DEFAULT 'new'
-                CHECK (status IN ('new', 'open', 'resolved')),
-  deleted_at  TIMESTAMPTZ,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  applet_id     UUID        NOT NULL,
+  ref_number    TEXT        NOT NULL,
+  name          TEXT        NOT NULL,
+  email         TEXT        NOT NULL,
+  phone         TEXT,
+  message       TEXT,
+  custom_fields JSONB,
+  status        TEXT        NOT NULL DEFAULT 'new'
+                  CHECK (status IN ('new', 'open', 'resolved')),
+  deleted_at    TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT contacts_ref_number_unique UNIQUE (ref_number)
 );
 
@@ -62,6 +63,10 @@ CREATE TABLE IF NOT EXISTS email_accounts (
   smtp_config  JSONB,
   last_sync_at TIMESTAMPTZ
 );
+
+-- Idempotent column additions for schema evolution (safe to re-run on existing tenants)
+ALTER TABLE contacts ALTER COLUMN message DROP NOT NULL;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS custom_fields JSONB;
 
 -- Indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_contacts_applet_id   ON contacts(applet_id);

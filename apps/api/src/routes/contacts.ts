@@ -8,7 +8,8 @@ const submitBody = z.object({
   name: z.string().min(1, 'Name is required').max(200),
   email: z.string().email('Invalid email address'),
   phone: z.string().max(50).optional(),
-  message: z.string().min(1, 'Message is required').max(5000),
+  message: z.string().max(5000).optional(),
+  custom_fields: z.record(z.string().max(1000)).optional(),
 });
 
 const contactRoutes: FastifyPluginAsync = async (app) => {
@@ -26,7 +27,7 @@ const contactRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const { widget_key, name, email, phone, message } = parsed.data;
+    const { widget_key, name, email, phone, message, custom_fields } = parsed.data;
     const db = getPlatformClient();
 
     const applet = await db.applet.findUnique({
@@ -49,18 +50,18 @@ const contactRoutes: FastifyPluginAsync = async (app) => {
         name,
         email,
         phone: phone ?? null,
-        message,
+        message: message ?? null,
+        ...(custom_fields && Object.keys(custom_fields).length > 0 ? { customFields: custom_fields } : {}),
       },
     });
 
     // Fire-and-forget — don't fail the request if email delivery fails
-    // Conditional spread avoids passing phone: undefined (exactOptionalPropertyTypes)
     sendNewContactEmail(applet.tenant.ownerEmail, applet.name, {
-      ref, name, email, message,
+      ref, name, email, message: message ?? '',
       ...(phone !== undefined ? { phone } : {}),
     }).catch((err: unknown) => console.error('[Contacts] Notification email failed', { err }));
 
-    sendContactConfirmationEmail(email, applet.tenant.companyName, { ref, name, message })
+    sendContactConfirmationEmail(email, applet.tenant.companyName, { ref, name, message: message ?? '' })
       .catch((err: unknown) => console.error('[Contacts] Confirmation email failed', { err }));
 
     return reply.status(201).send({ success: true, data: { ref } });

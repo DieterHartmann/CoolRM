@@ -1,3 +1,20 @@
+export type FieldType = 'text' | 'email' | 'tel' | 'textarea';
+
+export interface FieldDef {
+  id: string;
+  label: string;
+  type: FieldType;
+  required: boolean;
+  placeholder?: string;
+}
+
+export const DEFAULT_FIELDS: FieldDef[] = [
+  { id: 'name',    label: 'Name',    type: 'text',     required: true,  placeholder: 'Your name' },
+  { id: 'email',   label: 'Email',   type: 'email',    required: true,  placeholder: 'you@example.com' },
+  { id: 'phone',   label: 'Phone',   type: 'tel',      required: false, placeholder: 'Optional' },
+  { id: 'message', label: 'Message', type: 'textarea', required: true,  placeholder: 'How can we help?' },
+];
+
 export interface Applet {
   id: string;
   name: string;
@@ -5,6 +22,7 @@ export interface Applet {
   isActive: boolean;
   createdAt: string;
   embedCode: string;
+  fieldConfig: FieldDef[] | null;
 }
 
 export interface Contact {
@@ -13,7 +31,7 @@ export interface Contact {
   name: string;
   email: string;
   phone: string | null;
-  message: string;
+  message: string | null;
   status: 'new' | 'open' | 'resolved';
   createdAt: string;
 }
@@ -41,4 +59,6 @@ export const api = {
     req<{ contact: { id: string; status: Contact['status'] } }>(
       'PATCH', `/api/v1/applets/${appletId}/contacts/${contactId}/status`, { status },
     ),
+  updateAppletFields: (appletId: string, fields: FieldDef[]) =>
+    req<{ fields: FieldDef[] }>('PUT', `/api/v1/applets/${appletId}/fields`, { fields }),
 };

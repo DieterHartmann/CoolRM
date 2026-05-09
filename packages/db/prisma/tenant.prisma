@@ -23,16 +23,17 @@ datasource db {
 }
 
 model Contact {
-  id        String    @id @default(uuid())
-  appletId  String    @map("applet_id")
-  refNumber String    @unique @map("ref_number")
-  name      String
-  email     String
-  phone     String?
-  message   String
-  status    String    @default("new")
-  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id           String    @id @default(uuid())
+  appletId     String    @map("applet_id")
+  refNumber    String    @unique @map("ref_number")
+  name         String
+  email        String
+  phone        String?
+  message      String?
+  customFields Json?     @map("custom_fields")
+  status       String    @default("new")
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   threads Thread[]
 

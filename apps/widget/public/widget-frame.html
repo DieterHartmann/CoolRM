@@ -54,6 +54,7 @@
     .btn:disabled { background: #a78bfa; cursor: not-allowed; }
     .err { font-size: 13px; color: #ef4444; margin-top: 10px; display: none; }
     .err.show { display: block; }
+    #loading { color: #9ca3af; font-size: 14px; }
 
     #success { text-align: center; padding: 40px 16px; display: none; }
     #success.show { display: block; }
@@ -85,23 +86,9 @@
 
   <div id="form-wrap">
     <h2>Get in touch</h2>
-    <form id="form" novalidate>
-      <div class="field">
-        <label for="f-name">Name<span class="req">*</span></label>
-        <input id="f-name" type="text" autocomplete="name" placeholder="Your name">
-      </div>
-      <div class="field">
-        <label for="f-email">Email<span class="req">*</span></label>
-        <input id="f-email" type="email" autocomplete="email" placeholder="you@example.com">
-      </div>
-      <div class="field">
-        <label for="f-phone">Phone</label>
-        <input id="f-phone" type="tel" autocomplete="tel" placeholder="Optional">
-      </div>
-      <div class="field">
-        <label for="f-message">Message<span class="req">*</span></label>
-        <textarea id="f-message" rows="4" placeholder="How can we help?"></textarea>
-      </div>
+    <div id="loading">Loading…</div>
+    <form id="form" novalidate style="display:none">
+      <div id="fields-container"></div>
       <button class="btn" type="submit" id="btn">Send message</button>
       <div class="err" id="err"></div>
     </form>
@@ -116,37 +103,99 @@
 
   <script>
     var key = new URLSearchParams(location.search).get('key');
+    var fields = [];
+    var STANDARD = ['name', 'email', 'phone', 'message'];
+
     var btn = document.getElementById('btn');
     var errEl = document.getElementById('err');
     var formWrap = document.getElementById('form-wrap');
     var successEl = document.getElementById('success');
     var refBadge = document.getElementById('ref-badge');
+    var formEl = document.getElementById('form');
+    var loadingEl = document.getElementById('loading');
+    var fieldsContainer = document.getElementById('fields-container');
 
     function sendHeight() {
-      var h = document.body.scrollHeight;
-      window.parent.postMessage({ crmHeight: h }, '*');
+      window.parent.postMessage({ crmHeight: document.body.scrollHeight }, '*');
     }
 
-    // Send initial height once layout is stable
-    window.addEventListener('load', function() { setTimeout(sendHeight, 50); });
+    function esc(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
 
-    document.getElementById('form').addEventListener('submit', async function(e) {
+    function renderForm(cfg) {
+      fields = cfg;
+      fieldsContainer.innerHTML = cfg.map(function(field) {
+        var reqSpan = field.required ? '<span class="req">*</span>' : '';
+        var ph = esc(field.placeholder || '');
+        var inputHtml;
+        if (field.type === 'textarea') {
+          inputHtml = '<textarea id="f-' + esc(field.id) + '" rows="4" placeholder="' + ph + '"></textarea>';
+        } else {
+          var ac = field.id === 'name' ? ' autocomplete="name"'
+                 : field.id === 'email' ? ' autocomplete="email"'
+                 : field.id === 'phone' ? ' autocomplete="tel"' : '';
+          inputHtml = '<input id="f-' + esc(field.id) + '" type="' + esc(field.type) + '" placeholder="' + ph + '"' + ac + '>';
+        }
+        return '<div class="field"><label for="f-' + esc(field.id) + '">' + esc(field.label) + reqSpan + '</label>' + inputHtml + '</div>';
+      }).join('');
+      loadingEl.style.display = 'none';
+      formEl.style.display = '';
+      setTimeout(sendHeight, 50);
+    }
+
+    async function loadConfig() {
+      if (!key) {
+        loadingEl.textContent = 'Widget configuration error. Please contact the site owner.';
+        return;
+      }
+      try {
+        var res = await fetch('/api/v1/widget/' + encodeURIComponent(key) + '/config');
+        var data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Config error');
+        renderForm(data.data.fields);
+      } catch (e) {
+        loadingEl.textContent = 'Failed to load form. Please refresh the page.';
+        sendHeight();
+      }
+    }
+
+    window.addEventListener('load', loadConfig);
+
+    formEl.addEventListener('submit', async function(e) {
       e.preventDefault();
       errEl.className = 'err';
       errEl.textContent = '';
 
-      var name = document.getElementById('f-name').value.trim();
-      var email = document.getElementById('f-email').value.trim();
-      var phone = document.getElementById('f-phone').value.trim();
-      var message = document.getElementById('f-message').value.trim();
+      var body = { widget_key: key };
+      var customFields = {};
 
-      if (!name) { showErr('Name is required.'); return; }
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('Please enter a valid email address.'); return; }
-      if (!message) { showErr('Please enter a message.'); return; }
-      if (!key) { showErr('Widget configuration error. Please contact the site owner.'); return; }
+      for (var i = 0; i < fields.length; i++) {
+        var field = fields[i];
+        var el = document.getElementById('f-' + field.id);
+        if (!el) continue;
+        var val = el.value.trim();
 
-      var body = { widget_key: key, name: name, email: email, message: message };
-      if (phone) body.phone = phone;
+        if (field.required && !val) {
+          showErr((field.label || field.id) + ' is required.');
+          return;
+        }
+
+        if (field.id === 'email' && val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+          showErr('Please enter a valid email address.');
+          return;
+        }
+
+        if (STANDARD.indexOf(field.id) !== -1) {
+          if (val) body[field.id] = val;
+        } else {
+          if (val) customFields[field.id] = val;
+        }
+      }
+
+      if (Object.keys(customFields).length > 0) {
+        body.custom_fields = customFields;
+      }
 
       btn.disabled = true;
       btn.textContent = 'Sending…';

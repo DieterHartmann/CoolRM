@@ -1,8 +1,10 @@
 import { CSSProperties, FormEvent, useEffect, useState } from 'react';
-import { api, Applet, Contact } from '../lib/api.js';
+import { api, Applet, Contact, FieldDef, FieldType, DEFAULT_FIELDS } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 
-type Tab = 'contacts' | 'embed';
+type Tab = 'contacts' | 'fields' | 'embed';
+
+const LOCKED_IDS = new Set(['name', 'email']);
 
 export default function DashboardPage() {
   const { user, signOut } = useAuth();
@@ -68,6 +70,10 @@ export default function DashboardPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  }
+
+  function handleFieldsSaved(appletId: string, fields: FieldDef[]) {
+    setApplets(prev => prev.map(a => a.id === appletId ? { ...a, fieldConfig: fields } : a));
   }
 
   return (
@@ -152,7 +158,7 @@ export default function DashboardPage() {
               <div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b', padding: '16px 0', marginRight: 20, flexShrink: 0 }}>
                 {selected.name}
               </div>
-              {(['contacts', 'embed'] as Tab[]).map(t => (
+              {(['contacts', 'fields', 'embed'] as Tab[]).map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -167,7 +173,7 @@ export default function DashboardPage() {
                     cursor: 'pointer',
                   }}
                 >
-                  {t === 'embed' ? 'Embed Code' : 'Contacts'}
+                  {t === 'embed' ? 'Embed Code' : t === 'fields' ? 'Form Fields' : 'Contacts'}
                 </button>
               ))}
             </div>
@@ -181,6 +187,12 @@ export default function DashboardPage() {
               )}
               {tab === 'contacts' && (
                 <ContactsPanel contacts={contacts} loading={loadingContacts} appletId={selected.id} />
+              )}
+              {tab === 'fields' && (
+                <FieldsPanel
+                  applet={selected}
+                  onSaved={(fields) => handleFieldsSaved(selected.id, fields)}
+                />
               )}
               {tab === 'embed' && (
                 <EmbedPanel embedCode={selected.embedCode} copied={copied} onCopy={copyEmbed} />
@@ -251,6 +263,177 @@ function ContactsPanel({ contacts: initial, loading, appletId }: { contacts: Con
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function FieldsPanel({ applet, onSaved }: { applet: Applet; onSaved: (fields: FieldDef[]) => void }) {
+  const [fields, setFields] = useState<FieldDef[]>(applet.fieldConfig ?? DEFAULT_FIELDS);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [savedOk, setSavedOk] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newType, setNewType] = useState<FieldType>('text');
+  const [newPlaceholder, setNewPlaceholder] = useState('');
+
+  useEffect(() => {
+    setFields(applet.fieldConfig ?? DEFAULT_FIELDS);
+    setShowAdd(false);
+    setSaveError('');
+  }, [applet.id]);
+
+  function updateField(id: string, patch: Partial<FieldDef>) {
+    setFields(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f));
+  }
+
+  function removeField(id: string) {
+    setFields(prev => prev.filter(f => f.id !== id));
+  }
+
+  function addField(e: FormEvent) {
+    e.preventDefault();
+    if (!newLabel.trim()) return;
+    const id = 'cf_' + Date.now().toString(36);
+    setFields(prev => [...prev, {
+      id,
+      label: newLabel.trim(),
+      type: newType,
+      required: false,
+      ...(newPlaceholder.trim() ? { placeholder: newPlaceholder.trim() } : {}),
+    }]);
+    setNewLabel('');
+    setNewType('text');
+    setNewPlaceholder('');
+    setShowAdd(false);
+  }
+
+  async function save() {
+    setSaving(true);
+    setSaveError('');
+    try {
+      const { fields: saved } = await api.updateAppletFields(applet.id, fields);
+      onSaved(saved);
+      setSavedOk(true);
+      setTimeout(() => setSavedOk(false), 2000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 600 }}>
+      <h2 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: '#1e293b' }}>Form Fields</h2>
+      <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b' }}>
+        Customize which fields appear in your widget. Name and email are always required.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+        {fields.map((field) => {
+          const locked = LOCKED_IDS.has(field.id);
+          return (
+            <div key={field.id} style={fieldCard}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', width: 52, flexShrink: 0 }}>
+                    {field.type}
+                  </span>
+                  <input
+                    value={field.label}
+                    onChange={e => updateField(field.id, { label: e.target.value })}
+                    placeholder="Label"
+                    style={{ ...inlineInput, fontWeight: 500 }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 60, flexShrink: 0 }} />
+                  <input
+                    value={field.placeholder ?? ''}
+                    onChange={e => updateField(field.id, { placeholder: e.target.value })}
+                    placeholder="Placeholder (optional)"
+                    style={{ ...inlineInput, color: '#64748b', fontSize: 12 }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: locked ? '#94a3b8' : '#475569', cursor: locked ? 'default' : 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={field.required}
+                    disabled={locked}
+                    onChange={e => updateField(field.id, { required: e.target.checked })}
+                  />
+                  Required
+                </label>
+                {!locked && (
+                  <button
+                    onClick={() => removeField(field.id)}
+                    style={removeBtnStyle}
+                    title="Remove field"
+                  >
+                    ✕
+                  </button>
+                )}
+                {locked && (
+                  <span style={{ fontSize: 12, color: '#94a3b8', width: 28, textAlign: 'center' }} title="Required field">🔒</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {showAdd ? (
+        <form onSubmit={addField} style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 8, padding: '14px 16px', marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <input
+              autoFocus
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+              placeholder="Field label *"
+              required
+              style={{ ...inlineInput, flex: 1 }}
+            />
+            <select
+              value={newType}
+              onChange={e => setNewType(e.target.value as FieldType)}
+              style={selectStyle}
+            >
+              <option value="text">Text</option>
+              <option value="tel">Phone / Tel</option>
+              <option value="textarea">Multi-line</option>
+            </select>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <input
+              value={newPlaceholder}
+              onChange={e => setNewPlaceholder(e.target.value)}
+              placeholder="Placeholder (optional)"
+              style={{ ...inlineInput, width: '100%' }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="submit" style={createBtn}>Add field</button>
+            <button type="button" onClick={() => { setShowAdd(false); setNewLabel(''); setNewType('text'); setNewPlaceholder(''); }} style={cancelBtn}>Cancel</button>
+          </div>
+        </form>
+      ) : (
+        <button onClick={() => setShowAdd(true)} style={{ ...newAppletBtn, marginBottom: 16 }}>
+          <span style={{ fontSize: 15, lineHeight: 1 }}>+</span> Add custom field
+        </button>
+      )}
+
+      {saveError && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 6, color: '#dc2626', fontSize: 13 }}>
+          {saveError}
+        </div>
+      )}
+
+      <button onClick={save} disabled={saving} style={saveBtn}>
+        {saving ? 'Saving…' : savedOk ? '✓ Saved' : 'Save changes'}
+      </button>
     </div>
   );
 }
@@ -428,4 +611,58 @@ const th: CSSProperties = {
 const td: CSSProperties = {
   padding: '12px 16px',
   verticalAlign: 'middle',
+};
+
+const fieldCard: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  background: '#fff',
+  border: '1px solid #e2e8f0',
+  borderRadius: 8,
+  padding: '10px 14px',
+};
+
+const inlineInput: CSSProperties = {
+  flex: 1,
+  padding: '5px 8px',
+  border: '1px solid #e2e8f0',
+  borderRadius: 5,
+  fontSize: 13,
+  fontFamily: 'inherit',
+  outline: 'none',
+  background: '#f8fafc',
+  color: '#1e293b',
+  width: '100%',
+};
+
+const selectStyle: CSSProperties = {
+  padding: '5px 8px',
+  border: '1px solid #e2e8f0',
+  borderRadius: 5,
+  fontSize: 13,
+  fontFamily: 'inherit',
+  background: '#f8fafc',
+  color: '#1e293b',
+  outline: 'none',
+};
+
+const removeBtnStyle: CSSProperties = {
+  padding: '3px 7px',
+  borderRadius: 4,
+  border: 'none',
+  background: '#fef2f2',
+  color: '#ef4444',
+  fontSize: 11,
+  cursor: 'pointer',
+};
+
+const saveBtn: CSSProperties = {
+  padding: '10px 20px',
+  borderRadius: 6,
+  border: 'none',
+  background: '#3b82f6',
+  color: '#fff',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
 };

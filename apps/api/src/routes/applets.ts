@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto';
 import { z } from 'zod';
 import { getPlatformClient, getTenantClient, getTenantSchemaName } from '@crm/db';
 import { config } from '../config.js';
+import { FieldDef, validateFieldDefs } from '../lib/field-config.js';
 
 const createBody = z.object({
   name: z.string().min(1, 'Name is required').max(100),
@@ -24,7 +25,7 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
     const applets = await db.applet.findMany({
       where: { tenantId },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, name: true, widgetKey: true, isActive: true, createdAt: true },
+      select: { id: true, name: true, widgetKey: true, isActive: true, createdAt: true, fieldConfig: true },
     });
 
     return {
@@ -103,6 +104,42 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
     return { success: true, data: { contact } };
   });
 
+  // PUT /api/v1/applets/:id/fields — save widget field configuration
+  app.put('/:id/fields', async (request, reply) => {
+    const tenantId = request.sessionUser!.tenantId;
+    if (!tenantId) {
+      return reply.status(403).send({ success: false, error: 'Tenant not provisioned yet' });
+    }
+
+    const { id } = request.params as { id: string };
+    const body = request.body as { fields?: unknown };
+
+    if (!validateFieldDefs(body.fields)) {
+      return reply.status(400).send({ success: false, error: 'Invalid field configuration' });
+    }
+
+    const fields = body.fields as FieldDef[];
+
+    const hasName = fields.some((f) => f.id === 'name');
+    const hasEmail = fields.some((f) => f.id === 'email');
+    if (!hasName || !hasEmail) {
+      return reply.status(400).send({ success: false, error: 'name and email fields are required' });
+    }
+
+    const db = getPlatformClient();
+    const applet = await db.applet.findUnique({ where: { id }, select: { tenantId: true } });
+    if (!applet || applet.tenantId !== tenantId) {
+      return reply.status(404).send({ success: false, error: 'Applet not found' });
+    }
+
+    await db.applet.update({
+      where: { id },
+      data: { fieldConfig: fields },
+    });
+
+    return { success: true, data: { fields } };
+  });
+
   // POST /api/v1/applets — create a new applet
   app.post('/', async (request, reply) => {
     const tenantId = request.sessionUser!.tenantId;
@@ -126,9 +163,9 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
         tenantId,
         name: parsed.data.name,
         widgetKey,
-        isActive: true, // Phase 3 billing will control this
+        isActive: true,
       },
-      select: { id: true, name: true, widgetKey: true, isActive: true, createdAt: true },
+      select: { id: true, name: true, widgetKey: true, isActive: true, createdAt: true, fieldConfig: true },
     });
 
     return reply.status(201).send({

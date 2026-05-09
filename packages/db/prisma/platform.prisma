@@ -102,6 +102,7 @@ model Applet {
   name                 String
   widgetKey            String   @unique @map("widget_key")
   isActive             Boolean  @default(false) @map("is_active")
+  fieldConfig          Json?    @map("field_config")
   stripeSubscriptionId String?  @map("stripe_subscription_id")
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
