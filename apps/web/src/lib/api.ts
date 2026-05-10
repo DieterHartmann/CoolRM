@@ -34,6 +34,12 @@ export interface SmtpAccount {
   secure: boolean;
   user: string;
   passwordSet: boolean;
+  imapHost?: string | null;
+  imapPort?: number | null;
+  imapTls?: boolean | null;
+  lastSyncAt?: string | null;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
 }
 
 export interface SmtpAccountInput {
@@ -44,6 +50,9 @@ export interface SmtpAccountInput {
   secure: boolean;
   user: string;
   password: string; // blank = keep existing
+  imapHost: string;
+  imapPort: number;
+  imapTls: boolean;
 }
 
 export interface AppletAdmin {

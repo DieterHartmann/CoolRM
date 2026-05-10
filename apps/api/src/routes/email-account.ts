@@ -12,6 +12,9 @@ interface SmtpConfigStored {
   secure: boolean;
   user: string;
   encryptedPass: string;
+  imapHost?: string;
+  imapPort?: number;
+  imapTls?: boolean;
 }
 
 const smtpBody = z.object({
@@ -22,9 +25,16 @@ const smtpBody = z.object({
   secure: z.boolean(),
   user: z.string().min(1, 'Username is required').max(200),
   password: z.string().max(200).optional(),
+  imapHost: z.string().max(200).optional(),
+  imapPort: z.number().int().min(1).max(65535).optional(),
+  imapTls: z.boolean().optional(),
 });
 
-const testBody = smtpBody.extend({
+const testBody = z.object({
+  host: z.string().min(1).max(200),
+  port: z.number().int().min(1).max(65535),
+  secure: z.boolean(),
+  user: z.string().min(1).max(200),
   password: z.string().min(1, 'Password is required for testing').max(200),
 });
 
@@ -64,6 +74,12 @@ const emailAccountRoutes: FastifyPluginAsync = async (app) => {
           secure: cfg.secure,
           user: cfg.user,
           passwordSet: !!cfg.encryptedPass,
+          imapHost: cfg.imapHost ?? null,
+          imapPort: cfg.imapPort ?? null,
+          imapTls: cfg.imapTls ?? null,
+          lastSyncAt: account.lastSyncAt?.toISOString() ?? null,
+          lastError: account.lastError ?? null,
+          lastErrorAt: account.lastErrorAt?.toISOString() ?? null,
         },
       },
     };
@@ -84,7 +100,7 @@ const emailAccountRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ success: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' });
     }
 
-    const { fromName, fromEmail, host, port, secure, user, password } = parsed.data;
+    const { fromName, fromEmail, host, port, secure, user, password, imapHost, imapPort, imapTls } = parsed.data;
     const tenantDb = getTenantClient(getTenantSchemaName(tenantId));
 
     // Resolve encrypted password — use new one if provided, keep existing otherwise
@@ -100,13 +116,23 @@ const emailAccountRoutes: FastifyPluginAsync = async (app) => {
       encryptedPass = existingCfg.encryptedPass;
     }
 
-    const stored: SmtpConfigStored = { fromName, fromEmail, host, port, secure, user, encryptedPass };
-    // JSON.parse(JSON.stringify(...)) strips the typed interface — satisfies Prisma InputJsonValue
+    const stored: SmtpConfigStored = {
+      fromName, fromEmail, host, port, secure, user, encryptedPass,
+      ...(imapHost ? {
+        imapHost,
+        ...(imapPort !== undefined ? { imapPort } : {}),
+        ...(imapTls !== undefined ? { imapTls } : {}),
+      } : {}),
+    };
     const storedJson = JSON.parse(JSON.stringify(stored)) as object;
 
     const existing = await tenantDb.emailAccount.findFirst({ where: { appletId: id } });
     if (existing) {
-      await tenantDb.emailAccount.update({ where: { id: existing.id }, data: { smtpConfig: storedJson } });
+      // Saving new SMTP config clears previous errors so the sync worker retries cleanly
+      await tenantDb.emailAccount.update({
+        where: { id: existing.id },
+        data: { smtpConfig: storedJson, lastError: null, lastErrorAt: null },
+      });
     } else {
       await tenantDb.emailAccount.create({
         data: { appletId: id, provider: 'imap', smtpConfig: storedJson },
@@ -116,7 +142,15 @@ const emailAccountRoutes: FastifyPluginAsync = async (app) => {
     return {
       success: true,
       data: {
-        account: { fromName, fromEmail, host, port, secure, user, passwordSet: true },
+        account: {
+          fromName, fromEmail, host, port, secure, user, passwordSet: true,
+          imapHost: imapHost ?? null,
+          imapPort: imapPort ?? null,
+          imapTls: imapTls ?? null,
+          lastSyncAt: null,
+          lastError: null,
+          lastErrorAt: null,
+        },
       },
     };
   });

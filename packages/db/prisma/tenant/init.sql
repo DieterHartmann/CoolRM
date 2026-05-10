@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS email_accounts (
 -- Idempotent column additions for schema evolution (safe to re-run on existing tenants)
 ALTER TABLE contacts ALTER COLUMN message DROP NOT NULL;
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS custom_fields JSONB;
+ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS last_error TEXT;
+ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS last_error_at TIMESTAMPTZ;
 
 -- Indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_contacts_applet_id   ON contacts(applet_id);

@@ -90,7 +90,9 @@ model EmailAccount {
   provider    String
   oauthTokens String?   @map("oauth_tokens")
   smtpConfig  Json?     @map("smtp_config")
-  lastSyncAt  DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  lastSyncAt  DateTime? @map("last_sync_at")  @db.Timestamptz(6)
+  lastError   String?   @map("last_error")
+  lastErrorAt DateTime? @map("last_error_at") @db.Timestamptz(6)
 
   @@map("email_accounts")
 }

@@ -446,11 +446,16 @@ function FieldsPanel({ applet, onSaved }: { applet: Applet; onSaved: (fields: Fi
   );
 }
 
+function suggestImapHost(smtpHost: string): string {
+  return smtpHost.replace(/^smtp\./, 'imap.');
+}
+
 function EmailPanel({ appletId }: { appletId: string }) {
   const [account, setAccount] = useState<SmtpAccount | null>(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<SmtpAccountInput>({
     fromName: '', fromEmail: '', host: '', port: 587, secure: false, user: '', password: '',
+    imapHost: '', imapPort: 993, imapTls: true,
   });
   const [status, setStatus] = useState<'idle' | 'testing' | 'saving' | 'ok' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
@@ -464,9 +469,14 @@ function EmailPanel({ appletId }: { appletId: string }) {
       .then(({ account: a }) => {
         setAccount(a);
         if (a) {
-          setForm({ fromName: a.fromName, fromEmail: a.fromEmail, host: a.host, port: a.port, secure: a.secure, user: a.user, password: '' });
+          setForm({
+            fromName: a.fromName, fromEmail: a.fromEmail,
+            host: a.host, port: a.port, secure: a.secure,
+            user: a.user, password: '',
+            imapHost: a.imapHost ?? '', imapPort: a.imapPort ?? 993, imapTls: a.imapTls ?? true,
+          });
         } else {
-          setForm({ fromName: '', fromEmail: '', host: '', port: 587, secure: false, user: '', password: '' });
+          setForm({ fromName: '', fromEmail: '', host: '', port: 587, secure: false, user: '', password: '', imapHost: '', imapPort: 993, imapTls: true });
         }
       })
       .catch(() => setStatusMsg('Failed to load email account'))
@@ -477,13 +487,18 @@ function EmailPanel({ appletId }: { appletId: string }) {
     setForm(prev => ({ ...prev, ...patch }));
   }
 
+  function handleSmtpHostChange(host: string) {
+    const suggested = suggestImapHost(host);
+    set({ host, ...(form.imapHost === suggestImapHost(form.host) ? { imapHost: suggested } : {}) });
+  }
+
   async function test() {
     if (!form.password && !account?.passwordSet) { setStatus('error'); setStatusMsg('Enter a password to test.'); return; }
     setStatus('testing'); setStatusMsg('');
     try {
       const payload = { ...form, ...(form.password ? {} : { password: '(unchanged)' }) };
       await api.testEmailAccount(appletId, payload);
-      setStatus('ok'); setStatusMsg('Connection successful!');
+      setStatus('ok'); setStatusMsg('SMTP connection successful!');
     } catch (err) {
       setStatus('error'); setStatusMsg(err instanceof Error ? err.message : 'Connection failed');
     }
@@ -509,7 +524,7 @@ function EmailPanel({ appletId }: { appletId: string }) {
     try {
       await api.deleteEmailAccount(appletId);
       setAccount(null);
-      setForm({ fromName: '', fromEmail: '', host: '', port: 587, secure: false, user: '', password: '' });
+      setForm({ fromName: '', fromEmail: '', host: '', port: 587, secure: false, user: '', password: '', imapHost: '', imapPort: 993, imapTls: true });
       setStatus('idle'); setStatusMsg('');
     } catch (err) {
       setStatusMsg(err instanceof Error ? err.message : 'Failed to disconnect');
@@ -520,23 +535,57 @@ function EmailPanel({ appletId }: { appletId: string }) {
 
   if (loading) return <div style={{ color: '#94a3b8', fontSize: 14 }}>Loading…</div>;
 
+  const hasImap = !!(account?.imapHost);
+
   return (
     <div style={{ maxWidth: 520 }}>
       <h2 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: '#1e293b' }}>Email Account</h2>
       <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b' }}>
-        Send notification and confirmation emails from your own address. Falls back to the platform email if not set.
+        Send notifications from your own address and poll for customer replies. Falls back to platform email if not configured.
       </p>
 
+      {/* Status bar — sync health */}
       {account && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-          <span style={{ fontSize: 13, color: '#166534', flex: 1 }}>✓ Connected — <strong>{account.fromEmail}</strong></span>
-          <button onClick={disconnect} disabled={disconnecting} style={{ fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-            {disconnecting ? 'Disconnecting…' : 'Disconnect'}
-          </button>
+        <div style={{ marginBottom: 16 }}>
+          {account.lastError ? (
+            <div style={{ padding: '10px 14px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#dc2626', marginBottom: 4 }}>
+                ✕ Mailbox connection broken
+              </div>
+              <div style={{ fontSize: 12, color: '#b91c1c', fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: 6 }}>
+                {account.lastError}
+              </div>
+              <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                {account.lastErrorAt ? `Since ${new Date(account.lastErrorAt).toLocaleString()}` : ''}
+                {' · '}
+                <span>Update credentials below and save to retry.</span>
+              </div>
+            </div>
+          ) : hasImap ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 13 }}>
+              <span style={{ color: '#16a34a' }}>✓</span>
+              <span style={{ color: '#166534', flex: 1 }}>
+                Connected — <strong>{account.fromEmail}</strong>
+                {account.lastSyncAt && (
+                  <span style={{ color: '#64748b', fontWeight: 400 }}> · last synced {new Date(account.lastSyncAt).toLocaleString()}</span>
+                )}
+              </span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 13 }}>
+              <span style={{ color: '#16a34a' }}>✓</span>
+              <span style={{ color: '#166534', flex: 1 }}>Connected — <strong>{account.fromEmail}</strong> (SMTP only)</span>
+            </div>
+          )}
         </div>
       )}
 
       <form onSubmit={save}>
+        {/* ── SMTP section ── */}
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+          SMTP (outgoing)
+        </div>
+
         <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
           <div style={{ flex: 1 }}>
             <label style={labelStyle}>From name</label>
@@ -550,7 +599,7 @@ function EmailPanel({ appletId }: { appletId: string }) {
 
         <div style={{ marginBottom: 10 }}>
           <label style={labelStyle}>SMTP host</label>
-          <input value={form.host} onChange={e => set({ host: e.target.value })} placeholder="smtp.gmail.com" style={inputStyle} required />
+          <input value={form.host} onChange={e => handleSmtpHostChange(e.target.value)} placeholder="smtp.gmail.com" style={inputStyle} required />
         </div>
 
         <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'flex-end' }}>
@@ -573,9 +622,37 @@ function EmailPanel({ appletId }: { appletId: string }) {
           <input value={form.user} onChange={e => set({ user: e.target.value })} placeholder="support@acme.com" style={inputStyle} required />
         </div>
 
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Password{account?.passwordSet ? ' (leave blank to keep existing)' : ''}</label>
           <input value={form.password} onChange={e => set({ password: e.target.value })} type="password" placeholder={account?.passwordSet ? '••••••••' : 'App password or SMTP password'} style={inputStyle} />
+        </div>
+
+        {/* ── IMAP section ── */}
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+          IMAP (incoming — optional)
+        </div>
+        <p style={{ margin: '0 0 10px', fontSize: 12, color: '#94a3b8' }}>
+          When configured, CoolRM polls this mailbox every 5 minutes and threads customer replies into their contact record.
+        </p>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={labelStyle}>IMAP host</label>
+          <input value={form.imapHost} onChange={e => set({ imapHost: e.target.value })} placeholder="imap.gmail.com" style={inputStyle} />
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'flex-end' }}>
+          <div style={{ width: 100 }}>
+            <label style={labelStyle}>Port</label>
+            <input
+              value={form.imapPort}
+              onChange={e => { const p = parseInt(e.target.value, 10); set({ imapPort: isNaN(p) ? 993 : p }); }}
+              type="number" min={1} max={65535} style={inputStyle}
+            />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#475569', marginBottom: 1, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.imapTls} onChange={e => set({ imapTls: e.target.checked })} />
+            Use TLS
+          </label>
         </div>
 
         {statusMsg && (
@@ -584,13 +661,18 @@ function EmailPanel({ appletId }: { appletId: string }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button type="button" onClick={test} disabled={status === 'testing' || status === 'saving'} style={{ ...cancelBtn, color: '#475569' }}>
-            {status === 'testing' ? 'Testing…' : 'Test connection'}
+            {status === 'testing' ? 'Testing…' : 'Test SMTP'}
           </button>
           <button type="submit" disabled={status === 'saving' || status === 'testing'} style={saveBtn}>
             {status === 'saving' ? 'Saving…' : 'Save'}
           </button>
+          {account && (
+            <button type="button" onClick={disconnect} disabled={disconnecting} style={{ marginLeft: 'auto', fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          )}
         </div>
       </form>
     </div>

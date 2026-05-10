@@ -152,6 +152,42 @@ export async function sendContactConfirmationEmail(
   });
 }
 
+export async function sendMailboxErrorEmail(
+  to: string,
+  brokenFromEmail: string,
+  errorMessage: string,
+): Promise<void> {
+  const transporter = getPlatformTransporter();
+  if (!transporter) {
+    console.warn('[Email] Mailbox error (no platform SMTP configured):', { to, brokenFromEmail, errorMessage });
+    return;
+  }
+
+  await transporter.sendMail({
+    from: config.SMTP_FROM ?? config.SMTP_USER,
+    to,
+    subject: `Action required: email connection broken for ${brokenFromEmail}`,
+    text: [
+      `Your CoolRM email account (${brokenFromEmail}) has stopped working.`,
+      '',
+      `Error: ${errorMessage}`,
+      '',
+      'Please log in to your CoolRM dashboard and update your email credentials under the Email tab.',
+    ].join('\n'),
+    html: `
+      <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
+        <h2 style="color:#dc2626">Email connection broken</h2>
+        <p>Your CoolRM email account <strong>${brokenFromEmail}</strong> has stopped working. Notification and confirmation emails will fall back to the platform default until fixed.</p>
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px 16px;margin:16px 0;font-family:monospace;font-size:13px;color:#dc2626;word-break:break-all">
+          ${errorMessage}
+        </div>
+        <p>Log in to your CoolRM dashboard and go to <strong>Email</strong> tab to update your credentials (e.g. app password rotation, host change).</p>
+        <p style="color:#9ca3af;font-size:12px;margin-top:16px">You will not receive further notifications until the account is fixed and breaks again.</p>
+      </div>
+    `,
+  });
+}
+
 export async function sendPasswordResetEmail(to: string, url: string): Promise<void> {
   const transporter = getPlatformTransporter();
 
