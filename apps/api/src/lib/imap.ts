@@ -63,7 +63,8 @@ export async function syncMailbox(params: {
 
         const refNumber = match[1]!;
         const contact = await db.contact.findUnique({ where: { refNumber } });
-        if (!contact || contact.appletId !== appletId) continue;
+        if (!contact) { console.debug(`[IMAP] ref ${refNumber} — contact not found`); continue; }
+        if (contact.appletId !== appletId) { console.debug(`[IMAP] ref ${refNumber} — appletId mismatch (contact=${contact.appletId} account=${appletId})`); continue; }
 
         const msgDate = parsed.date ?? new Date();
 
@@ -97,6 +98,7 @@ export async function syncMailbox(params: {
             hasRef: true,
           },
         });
+        console.info(`[IMAP] stored message for contact ${refNumber} thread=${thread.id}`);
       }
       console.info(`[IMAP] account ${accountId}: fetched=${fetched} matched=${matched} since=${since.toISOString()}`);
     } finally {
