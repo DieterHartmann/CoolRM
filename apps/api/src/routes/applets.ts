@@ -273,8 +273,10 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
 
     try {
       await sendReplyEmail(toAddress, subject, replyBody, tenantMail);
+      console.info(`[Reply] sent to ${contact.email} (ref=${contact.refNumber}) via ${tenantMail ? `tenant SMTP ${cfg!.host}` : 'platform SMTP'}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to send email';
+      console.error(`[Reply] SMTP error for ${contact.email}: ${msg}`);
       return reply.status(502).send({ success: false, error: msg });
     }
 
