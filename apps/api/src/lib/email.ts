@@ -117,7 +117,7 @@ export async function sendContactConfirmationEmail(
 ): Promise<void> {
   const transporter = tenant?.transporter ?? getPlatformTransporter();
   const from = tenant?.from ?? config.SMTP_FROM ?? config.SMTP_USER;
-  const subject = `We received your message — ${contact.ref}`;
+  const subject = `We received your message [${contact.ref}]`;
 
   if (!transporter) {
     console.info('[Email] Contact confirmation (no SMTP configured):', { to, subject });
