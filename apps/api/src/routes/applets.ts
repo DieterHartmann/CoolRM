@@ -64,7 +64,7 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
       take: 100,
       select: {
         id: true, refNumber: true, name: true, email: true,
-        phone: true, message: true, status: true, createdAt: true,
+        phone: true, message: true, customFields: true, status: true, createdAt: true,
         _count: { select: { threads: true } },
       },
     });
@@ -72,7 +72,11 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
     return {
       success: true,
       data: {
-        contacts: contacts.map(({ _count, ...c }) => ({ ...c, threadCount: _count.threads })),
+        contacts: contacts.map(({ _count, customFields, ...c }) => ({
+          ...c,
+          customFields: (customFields ?? null) as Record<string, string> | null,
+          threadCount: _count.threads,
+        })),
       },
     };
   });

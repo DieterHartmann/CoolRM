@@ -191,7 +191,7 @@ export default function DashboardPage() {
                 </div>
               )}
               {tab === 'contacts' && (
-                <ContactsPanel contacts={contacts} loading={loadingContacts} appletId={selected.id} />
+                <ContactsPanel contacts={contacts} loading={loadingContacts} appletId={selected.id} fieldConfig={selected.fieldConfig ?? []} />
               )}
               {tab === 'fields' && (
                 <FieldsPanel
@@ -223,7 +223,7 @@ function EmptyState({ hasApplets }: { hasApplets: boolean }) {
   );
 }
 
-function ContactsPanel({ contacts: initial, loading, appletId }: { contacts: Contact[]; loading: boolean; appletId: string }) {
+function ContactsPanel({ contacts: initial, loading, appletId, fieldConfig }: { contacts: Contact[]; loading: boolean; appletId: string; fieldConfig: FieldDef[] }) {
   const [contacts, setContacts] = useState(initial);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
@@ -300,6 +300,7 @@ function ContactsPanel({ contacts: initial, loading, appletId }: { contacts: Con
           <ThreadPanel
             contact={selectedContact}
             appletId={appletId}
+            fieldConfig={fieldConfig}
             onClose={() => setSelectedContact(null)}
           />
         </div>
@@ -308,7 +309,16 @@ function ContactsPanel({ contacts: initial, loading, appletId }: { contacts: Con
   );
 }
 
-function ThreadPanel({ contact, appletId, onClose }: { contact: Contact; appletId: string; onClose: () => void }) {
+function ContactField({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+      <div style={{ fontSize: 12, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
+    </div>
+  );
+}
+
+function ThreadPanel({ contact, appletId, fieldConfig, onClose }: { contact: Contact; appletId: string; fieldConfig: FieldDef[]; onClose: () => void }) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -326,12 +336,25 @@ function ThreadPanel({ contact, appletId, onClose }: { contact: Contact; appletI
 
   return (
     <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 180px)' }}>
-      <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 14, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contact.name}</div>
-          <div style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{contact.refNumber} · {contact.email}</div>
+      {/* Contact details header */}
+      <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 14, color: '#1e293b' }}>{contact.name}</div>
+            <div style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{contact.refNumber}</div>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 18, lineHeight: 1, padding: '0 4px', flexShrink: 0 }}>×</button>
         </div>
-        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 18, lineHeight: 1, padding: '0 4px' }}>×</button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 8px' }}>
+          <ContactField label="Email" value={contact.email} />
+          {contact.phone && <ContactField label="Phone" value={contact.phone} />}
+          {contact.customFields && fieldConfig
+            .filter(f => f.id.startsWith('cf_') && contact.customFields![f.id])
+            .map(f => (
+              <ContactField key={f.id} label={f.label} value={contact.customFields![f.id]!} />
+            ))
+          }
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>

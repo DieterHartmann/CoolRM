@@ -79,6 +79,7 @@ export interface Contact {
   email: string;
   phone: string | null;
   message: string | null;
+  customFields: Record<string, string> | null;
   status: 'new' | 'open' | 'resolved';
   createdAt: string;
   threadCount: number;
