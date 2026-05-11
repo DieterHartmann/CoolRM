@@ -65,10 +65,16 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
       select: {
         id: true, refNumber: true, name: true, email: true,
         phone: true, message: true, status: true, createdAt: true,
+        _count: { select: { threads: true } },
       },
     });
 
-    return { success: true, data: { contacts } };
+    return {
+      success: true,
+      data: {
+        contacts: contacts.map(({ _count, ...c }) => ({ ...c, threadCount: _count.threads })),
+      },
+    };
   });
 
   // PATCH /api/v1/applets/:id/contacts/:contactId/status — update contact status
@@ -102,6 +108,54 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
     });
 
     return { success: true, data: { contact } };
+  });
+
+  // GET /api/v1/applets/:id/contacts/:contactId/messages — thread messages for a contact
+  app.get('/:id/contacts/:contactId/messages', async (request, reply) => {
+    const tenantId = request.sessionUser!.tenantId;
+    if (!tenantId) return reply.status(403).send({ success: false, error: 'Tenant not provisioned yet' });
+
+    const { id, contactId } = request.params as { id: string; contactId: string };
+    const db = getPlatformClient();
+    const applet = await db.applet.findUnique({ where: { id }, select: { tenantId: true } });
+    if (!applet || applet.tenantId !== tenantId) {
+      return reply.status(404).send({ success: false, error: 'Applet not found' });
+    }
+
+    const schemaName = getTenantSchemaName(tenantId);
+    const tenantDb = getTenantClient(schemaName);
+
+    const contact = await tenantDb.contact.findUnique({ where: { id: contactId }, select: { appletId: true } });
+    if (!contact || contact.appletId !== id) {
+      return reply.status(404).send({ success: false, error: 'Contact not found' });
+    }
+
+    const threads = await tenantDb.thread.findMany({
+      where: { contactId },
+      orderBy: { lastActivityAt: 'asc' },
+      select: {
+        id: true,
+        subject: true,
+        messages: {
+          orderBy: { sentAt: 'asc' },
+          select: { id: true, direction: true, fromAddress: true, toAddress: true, bodyText: true, sentAt: true },
+        },
+      },
+    });
+
+    const messages = threads.flatMap(t =>
+      t.messages.map(m => ({
+        id: m.id,
+        threadSubject: t.subject,
+        direction: m.direction as 'inbound' | 'outbound',
+        fromAddress: m.fromAddress,
+        toAddress: m.toAddress,
+        bodyText: m.bodyText,
+        sentAt: m.sentAt.toISOString(),
+      }))
+    );
+
+    return { success: true, data: { messages } };
   });
 
   // PUT /api/v1/applets/:id/fields — save widget field configuration

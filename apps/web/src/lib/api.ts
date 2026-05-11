@@ -81,6 +81,17 @@ export interface Contact {
   message: string | null;
   status: 'new' | 'open' | 'resolved';
   createdAt: string;
+  threadCount: number;
+}
+
+export interface ThreadMessage {
+  id: string;
+  threadSubject: string;
+  direction: 'inbound' | 'outbound';
+  fromAddress: string;
+  toAddress: string;
+  bodyText: string | null;
+  sentAt: string;
 }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -112,6 +123,8 @@ export const api = {
     req<{ tenants: TenantAdmin[] }>('GET', '/api/v1/admin/tenants'),
   setAppletActive: (appletId: string, isActive: boolean) =>
     req<{ applet: { id: string; isActive: boolean } }>('PATCH', `/api/v1/admin/applets/${appletId}/active`, { isActive }),
+  getContactMessages: (appletId: string, contactId: string) =>
+    req<{ messages: ThreadMessage[] }>('GET', `/api/v1/applets/${appletId}/contacts/${contactId}/messages`),
   getEmailAccount: (appletId: string) =>
     req<{ account: SmtpAccount | null }>('GET', `/api/v1/applets/${appletId}/email-account`),
   saveEmailAccount: (appletId: string, data: SmtpAccountInput) =>

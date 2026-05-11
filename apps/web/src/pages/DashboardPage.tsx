@@ -1,5 +1,5 @@
-import { CSSProperties, FormEvent, useEffect, useState } from 'react';
-import { api, Applet, Contact, FieldDef, FieldType, DEFAULT_FIELDS, SmtpAccount, SmtpAccountInput } from '../lib/api.js';
+import { CSSProperties, FormEvent, useEffect, useRef, useState } from 'react';
+import { api, Applet, Contact, FieldDef, FieldType, DEFAULT_FIELDS, SmtpAccount, SmtpAccountInput, ThreadMessage } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 
 type Tab = 'contacts' | 'fields' | 'email' | 'embed';
@@ -225,12 +225,18 @@ function EmptyState({ hasApplets }: { hasApplets: boolean }) {
 
 function ContactsPanel({ contacts: initial, loading, appletId }: { contacts: Contact[]; loading: boolean; appletId: string }) {
   const [contacts, setContacts] = useState(initial);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
-  useEffect(() => { setContacts(initial); }, [initial]);
+  useEffect(() => {
+    setContacts(initial);
+    setSelectedContact(null);
+  }, [initial]);
 
-  async function cycleStatus(c: Contact) {
+  async function cycleStatus(e: React.MouseEvent, c: Contact) {
+    e.stopPropagation();
     const next: Contact['status'] = c.status === 'new' ? 'open' : c.status === 'open' ? 'resolved' : 'new';
     setContacts(prev => prev.map(x => x.id === c.id ? { ...x, status: next } : x));
+    if (selectedContact?.id === c.id) setSelectedContact(prev => prev ? { ...prev, status: next } : null);
     try {
       await api.updateContactStatus(appletId, c.id, next);
     } catch {
@@ -238,9 +244,7 @@ function ContactsPanel({ contacts: initial, loading, appletId }: { contacts: Con
     }
   }
 
-  if (loading) {
-    return <div style={{ color: '#94a3b8', fontSize: 14 }}>Loading contacts…</div>;
-  }
+  if (loading) return <div style={{ color: '#94a3b8', fontSize: 14 }}>Loading contacts…</div>;
   if (contacts.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '48px 0', color: '#94a3b8', fontSize: 14 }}>
@@ -248,29 +252,125 @@ function ContactsPanel({ contacts: initial, loading, appletId }: { contacts: Con
       </div>
     );
   }
+
   return (
-    <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-            {['Ref', 'Name', 'Email', 'Phone', 'Status', 'Date'].map(h => (
-              <th key={h} style={th}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {contacts.map((c, i) => (
-            <tr key={c.id} style={{ borderBottom: i < contacts.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
-              <td style={{ ...td, fontFamily: 'monospace', color: '#3b82f6', fontWeight: 600 }}>{c.refNumber}</td>
-              <td style={td}>{c.name}</td>
-              <td style={td}>{c.email}</td>
-              <td style={{ ...td, color: '#64748b' }}>{c.phone ?? '—'}</td>
-              <td style={td}><StatusBadge status={c.status} onClick={() => cycleStatus(c)} /></td>
-              <td style={{ ...td, color: '#64748b', whiteSpace: 'nowrap' }}>{formatDate(c.createdAt)}</td>
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+      <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              {['Ref', 'Name', 'Email', 'Phone', 'Status', 'Date', ''].map(h => (
+                <th key={h} style={th}>{h}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {contacts.map((c, i) => {
+              const isSelected = selectedContact?.id === c.id;
+              return (
+                <tr
+                  key={c.id}
+                  onClick={() => setSelectedContact(isSelected ? null : c)}
+                  style={{
+                    borderBottom: i < contacts.length - 1 ? '1px solid #f1f5f9' : 'none',
+                    background: isSelected ? '#eff6ff' : 'transparent',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <td style={{ ...td, fontFamily: 'monospace', color: '#3b82f6', fontWeight: 600 }}>{c.refNumber}</td>
+                  <td style={td}>{c.name}</td>
+                  <td style={td}>{c.email}</td>
+                  <td style={{ ...td, color: '#64748b' }}>{c.phone ?? '—'}</td>
+                  <td style={td}><StatusBadge status={c.status} onClick={(e) => cycleStatus(e, c)} /></td>
+                  <td style={{ ...td, color: '#64748b', whiteSpace: 'nowrap' }}>{formatDate(c.createdAt)}</td>
+                  <td style={{ ...td, color: '#94a3b8', fontSize: 12, whiteSpace: 'nowrap' }}>
+                    {c.threadCount > 0 && (
+                      <span style={{ color: '#3b82f6' }} title="Has messages">💬 {c.threadCount}</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {selectedContact && (
+        <div style={{ width: 380, flexShrink: 0 }}>
+          <ThreadPanel
+            contact={selectedContact}
+            appletId={appletId}
+            onClose={() => setSelectedContact(null)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ThreadPanel({ contact, appletId, onClose }: { contact: Contact; appletId: string; onClose: () => void }) {
+  const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    api.getContactMessages(appletId, contact.id)
+      .then(({ messages: msgs }) => {
+        setMessages(msgs);
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      })
+      .catch(() => setMessages([]))
+      .finally(() => setLoading(false));
+  }, [appletId, contact.id]);
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 180px)' }}>
+      <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 14, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contact.name}</div>
+          <div style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{contact.refNumber} · {contact.email}</div>
+        </div>
+        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 18, lineHeight: 1, padding: '0 4px' }}>×</button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
+        {loading ? (
+          <div style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</div>
+        ) : messages.length === 0 ? (
+          <div style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', padding: '32px 8px', lineHeight: 1.7 }}>
+            No messages yet.<br />
+            <span style={{ fontSize: 12 }}>Replies with <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 3 }}>{contact.refNumber}</code> in the subject will appear here.</span>
+          </div>
+        ) : (
+          <>
+            {messages.map(m => (
+              <div key={m.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3, gap: 8 }}>
+                  <span style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                    {m.direction === 'inbound' ? '← ' : '→ '}{m.fromAddress}
+                  </span>
+                  <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', flexShrink: 0 }}>{formatDateTime(m.sentAt)}</span>
+                </div>
+                <div style={{
+                  padding: '8px 11px',
+                  borderRadius: 8,
+                  background: m.direction === 'inbound' ? '#f0f9ff' : '#f5f3ff',
+                  border: `1px solid ${m.direction === 'inbound' ? '#bae6fd' : '#ede9fe'}`,
+                  fontSize: 13,
+                  color: '#1e293b',
+                  lineHeight: 1.55,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}>
+                  {m.bodyText?.trim() || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>No text content</span>}
+                </div>
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -685,7 +785,7 @@ function statusStyle(status: Contact['status']): { bg: string; color: string; la
   return { bg: '#f0fdf4', color: '#166534', label: 'Resolved' };
 }
 
-function StatusBadge({ status, onClick }: { status: Contact['status']; onClick?: () => void }) {
+function StatusBadge({ status, onClick }: { status: Contact['status']; onClick?: (e: React.MouseEvent) => void }) {
   const s = statusStyle(status);
   return (
     <span
@@ -754,6 +854,10 @@ function EmbedPanel({ embedCode, copied, onCopy }: { embedCode: string; copied: 
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-ZA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 // ── Styles ──────────────────────────────────────────────────────────────────
