@@ -38,8 +38,10 @@ export async function syncMailbox(params: {
     try {
       const since = lastSyncAt ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+      let fetched = 0, matched = 0;
       for await (const msg of client.fetch({ since }, { source: true })) {
         if (!msg.source) continue;
+        fetched++;
 
         const parsed = await simpleParser(msg.source as Buffer);
         const subject = parsed.subject ?? '';
@@ -53,7 +55,11 @@ export async function syncMailbox(params: {
 
         // Only thread emails that reference a CRM contact via subject ref
         const match = REF_RE.exec(subject);
-        if (!match) continue;
+        if (!match) {
+          console.debug(`[IMAP] no ref in subject: "${subject}"`);
+          continue;
+        }
+        matched++;
 
         const refNumber = match[1]!;
         const contact = await db.contact.findUnique({ where: { refNumber } });
@@ -92,6 +98,7 @@ export async function syncMailbox(params: {
           },
         });
       }
+      console.info(`[IMAP] account ${accountId}: fetched=${fetched} matched=${matched} since=${since.toISOString()}`);
     } finally {
       lock.release();
     }
