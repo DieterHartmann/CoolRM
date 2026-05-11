@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, useEffect, useRef, useState } from 'react';
+import { CSSProperties, FormEvent, useEffect, useRef, useState, useCallback } from 'react';
 import { api, Applet, Contact, FieldDef, FieldType, DEFAULT_FIELDS, SmtpAccount, SmtpAccountInput, ThreadMessage } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 
@@ -232,6 +232,12 @@ function ContactsPanel({ contacts: initial, loading, appletId, fieldConfig }: { 
     setSelectedContact(null);
   }, [initial]);
 
+  const handleReplySent = useCallback((contactId: string) => {
+    setContacts(prev => prev.map(c =>
+      c.id === contactId ? { ...c, threadCount: Math.max(1, c.threadCount) } : c
+    ));
+  }, []);
+
   async function cycleStatus(e: React.MouseEvent, c: Contact) {
     e.stopPropagation();
     const next: Contact['status'] = c.status === 'new' ? 'open' : c.status === 'open' ? 'resolved' : 'new';
@@ -296,12 +302,13 @@ function ContactsPanel({ contacts: initial, loading, appletId, fieldConfig }: { 
       </div>
 
       {selectedContact && (
-        <div style={{ width: 380, flexShrink: 0 }}>
+        <div style={{ width: 400, flexShrink: 0 }}>
           <ThreadPanel
             contact={selectedContact}
             appletId={appletId}
             fieldConfig={fieldConfig}
             onClose={() => setSelectedContact(null)}
+            onReplySent={() => handleReplySent(selectedContact.id)}
           />
         </div>
       )}
@@ -318,13 +325,24 @@ function ContactField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ThreadPanel({ contact, appletId, fieldConfig, onClose }: { contact: Contact; appletId: string; fieldConfig: FieldDef[]; onClose: () => void }) {
+function ThreadPanel({ contact, appletId, fieldConfig, onClose, onReplySent }: {
+  contact: Contact;
+  appletId: string;
+  fieldConfig: FieldDef[];
+  onClose: () => void;
+  onReplySent?: () => void;
+}) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [replyText, setReplyText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoading(true);
+    setReplyText('');
+    setSendError('');
     api.getContactMessages(appletId, contact.id)
       .then(({ messages: msgs }) => {
         setMessages(msgs);
@@ -333,6 +351,30 @@ function ThreadPanel({ contact, appletId, fieldConfig, onClose }: { contact: Con
       .catch(() => setMessages([]))
       .finally(() => setLoading(false));
   }, [appletId, contact.id]);
+
+  async function handleSendReply() {
+    if (!replyText.trim() || sending) return;
+    setSending(true);
+    setSendError('');
+    try {
+      const { message } = await api.sendReply(appletId, contact.id, replyText.trim());
+      setMessages(prev => [...prev, message]);
+      setReplyText('');
+      onReplySent?.();
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : 'Failed to send reply');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      void handleSendReply();
+    }
+  }
 
   return (
     <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 180px)' }}>
@@ -357,13 +399,14 @@ function ThreadPanel({ contact, appletId, fieldConfig, onClose }: { contact: Con
         </div>
       </div>
 
+      {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
         {loading ? (
           <div style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</div>
         ) : messages.length === 0 ? (
           <div style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', padding: '32px 8px', lineHeight: 1.7 }}>
             No messages yet.<br />
-            <span style={{ fontSize: 12 }}>Replies with <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 3 }}>{contact.refNumber}</code> in the subject will appear here.</span>
+            <span style={{ fontSize: 12 }}>Use the box below to send the first reply, or wait for the customer to reply with <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 3 }}>{contact.refNumber}</code> in the subject.</span>
           </div>
         ) : (
           <>
@@ -393,6 +436,44 @@ function ThreadPanel({ contact, appletId, fieldConfig, onClose }: { contact: Con
             <div ref={bottomRef} />
           </>
         )}
+      </div>
+
+      {/* Reply compose */}
+      <div style={{ borderTop: '1px solid #e2e8f0', padding: '10px 14px', flexShrink: 0 }}>
+        {sendError && (
+          <div style={{ marginBottom: 8, padding: '6px 10px', background: '#fef2f2', borderRadius: 5, fontSize: 12, color: '#dc2626' }}>
+            {sendError}
+          </div>
+        )}
+        <textarea
+          value={replyText}
+          onChange={e => setReplyText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={`Reply to ${contact.name}… (Ctrl+Enter to send)`}
+          rows={3}
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            borderRadius: 6,
+            border: '1px solid #e2e8f0',
+            fontSize: 13,
+            fontFamily: 'inherit',
+            resize: 'vertical',
+            outline: 'none',
+            boxSizing: 'border-box',
+            marginBottom: 8,
+            color: '#1e293b',
+          }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => { void handleSendReply(); }}
+            disabled={sending || !replyText.trim()}
+            style={{ ...saveBtn, padding: '7px 16px', fontSize: 12, opacity: (sending || !replyText.trim()) ? 0.6 : 1 }}
+          >
+            {sending ? 'Sending…' : 'Send reply'}
+          </button>
+        </div>
       </div>
     </div>
   );

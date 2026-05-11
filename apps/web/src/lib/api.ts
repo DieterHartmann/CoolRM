@@ -126,6 +126,8 @@ export const api = {
     req<{ applet: { id: string; isActive: boolean } }>('PATCH', `/api/v1/admin/applets/${appletId}/active`, { isActive }),
   getContactMessages: (appletId: string, contactId: string) =>
     req<{ messages: ThreadMessage[] }>('GET', `/api/v1/applets/${appletId}/contacts/${contactId}/messages`),
+  sendReply: (appletId: string, contactId: string, body: string) =>
+    req<{ message: ThreadMessage }>('POST', `/api/v1/applets/${appletId}/contacts/${contactId}/reply`, { body }),
   getEmailAccount: (appletId: string) =>
     req<{ account: SmtpAccount | null }>('GET', `/api/v1/applets/${appletId}/email-account`),
   saveEmailAccount: (appletId: string, data: SmtpAccountInput) =>

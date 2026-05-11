@@ -188,6 +188,22 @@ export async function sendMailboxErrorEmail(
   });
 }
 
+export async function sendReplyEmail(
+  to: string,
+  subject: string,
+  bodyText: string,
+  tenant?: TenantMailOptions,
+): Promise<void> {
+  const transporter = tenant?.transporter ?? getPlatformTransporter();
+  const from = tenant?.from ?? config.SMTP_FROM ?? config.SMTP_USER;
+
+  if (!transporter) {
+    throw new Error('No email account configured. Please set up your email in the Email tab first.');
+  }
+
+  await transporter.sendMail({ from, to, subject, text: bodyText });
+}
+
 export async function sendPasswordResetEmail(to: string, url: string): Promise<void> {
   const transporter = getPlatformTransporter();
 

@@ -4,6 +4,18 @@ import { z } from 'zod';
 import { getPlatformClient, getTenantClient, getTenantSchemaName } from '@crm/db';
 import { config } from '../config.js';
 import { FieldDef, validateFieldDefs } from '../lib/field-config.js';
+import { createSmtpTransporter, sendReplyEmail, TenantMailOptions } from '../lib/email.js';
+import { decrypt } from '../lib/crypto.js';
+
+interface StoredEmailCfg {
+  fromName: string;
+  fromEmail: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  encryptedPass: string;
+}
 
 const createBody = z.object({
   name: z.string().min(1, 'Name is required').max(100),
@@ -211,6 +223,100 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
     });
 
     return { success: true, data: { fields } };
+  });
+
+  // POST /api/v1/applets/:id/contacts/:contactId/reply — send reply email from dashboard
+  app.post('/:id/contacts/:contactId/reply', async (request, reply) => {
+    const tenantId = request.sessionUser!.tenantId;
+    if (!tenantId) return reply.status(403).send({ success: false, error: 'Tenant not provisioned yet' });
+
+    const { id, contactId } = request.params as { id: string; contactId: string };
+
+    const bodyParsed = z.object({ body: z.string().min(1, 'Message body is required').max(50000) }).safeParse(request.body);
+    if (!bodyParsed.success) {
+      return reply.status(400).send({ success: false, error: bodyParsed.error.issues[0]?.message ?? 'Invalid input' });
+    }
+    const { body: replyBody } = bodyParsed.data;
+
+    const db = getPlatformClient();
+    const applet = await db.applet.findUnique({ where: { id }, select: { tenantId: true } });
+    if (!applet || applet.tenantId !== tenantId) {
+      return reply.status(404).send({ success: false, error: 'Applet not found' });
+    }
+
+    const schemaName = getTenantSchemaName(tenantId);
+    const tenantDb = getTenantClient(schemaName);
+
+    const contact = await tenantDb.contact.findUnique({
+      where: { id: contactId },
+      select: { appletId: true, refNumber: true, name: true, email: true },
+    });
+    if (!contact || contact.appletId !== id) {
+      return reply.status(404).send({ success: false, error: 'Contact not found' });
+    }
+
+    const emailAccount = await tenantDb.emailAccount.findFirst({ where: { appletId: id } });
+    const cfg = emailAccount?.smtpConfig as unknown as StoredEmailCfg | null;
+
+    let tenantMail: TenantMailOptions | undefined;
+    if (cfg?.encryptedPass) {
+      const pass = decrypt(cfg.encryptedPass);
+      tenantMail = {
+        transporter: createSmtpTransporter({ host: cfg.host, port: cfg.port, secure: cfg.secure, user: cfg.user, pass }),
+        from: cfg.fromName ? `${cfg.fromName} <${cfg.fromEmail}>` : cfg.fromEmail,
+      };
+    }
+
+    const subject = `Re: We received your message [${contact.refNumber}]`;
+    const toAddress = `${contact.name} <${contact.email}>`;
+    const now = new Date();
+
+    try {
+      await sendReplyEmail(toAddress, subject, replyBody, tenantMail);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to send email';
+      return reply.status(502).send({ success: false, error: msg });
+    }
+
+    let thread = await tenantDb.thread.findFirst({ where: { contactId } });
+    if (!thread) {
+      thread = await tenantDb.thread.create({
+        data: { contactId, subject, lastActivityAt: now },
+      });
+    } else {
+      await tenantDb.thread.update({ where: { id: thread.id }, data: { lastActivityAt: now } });
+    }
+
+    const fromAddress = tenantMail?.from ?? config.SMTP_FROM ?? config.SMTP_USER ?? '';
+
+    const message = await tenantDb.message.create({
+      data: {
+        threadId: thread.id,
+        direction: 'outbound',
+        fromAddress,
+        toAddress: contact.email,
+        subject,
+        bodyText: replyBody,
+        sentAt: now,
+        hasRef: true,
+      },
+      select: { id: true, direction: true, fromAddress: true, toAddress: true, bodyText: true, sentAt: true },
+    });
+
+    return {
+      success: true,
+      data: {
+        message: {
+          id: message.id,
+          threadSubject: subject,
+          direction: 'outbound' as const,
+          fromAddress: message.fromAddress,
+          toAddress: message.toAddress,
+          bodyText: message.bodyText,
+          sentAt: message.sentAt.toISOString(),
+        },
+      },
+    };
   });
 
   // POST /api/v1/applets — create a new applet
