@@ -125,7 +125,10 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
     const schemaName = getTenantSchemaName(tenantId);
     const tenantDb = getTenantClient(schemaName);
 
-    const contact = await tenantDb.contact.findUnique({ where: { id: contactId }, select: { appletId: true } });
+    const contact = await tenantDb.contact.findUnique({
+      where: { id: contactId },
+      select: { appletId: true, name: true, email: true, message: true, createdAt: true },
+    });
     if (!contact || contact.appletId !== id) {
       return reply.status(404).send({ success: false, error: 'Contact not found' });
     }
@@ -143,7 +146,7 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
-    const messages = threads.flatMap(t =>
+    const threadMessages = threads.flatMap(t =>
       t.messages.map(m => ({
         id: m.id,
         threadSubject: t.subject,
@@ -155,7 +158,18 @@ const appletRoutes: FastifyPluginAsync = async (app) => {
       }))
     );
 
-    return { success: true, data: { messages } };
+    // Prepend the original widget submission as the first message in the thread
+    const initial = contact.message ? [{
+      id: `initial:${contactId}`,
+      threadSubject: 'Widget submission',
+      direction: 'inbound' as const,
+      fromAddress: `${contact.name} <${contact.email}>`,
+      toAddress: '',
+      bodyText: contact.message,
+      sentAt: contact.createdAt.toISOString(),
+    }] : [];
+
+    return { success: true, data: { messages: [...initial, ...threadMessages] } };
   });
 
   // PUT /api/v1/applets/:id/fields — save widget field configuration
