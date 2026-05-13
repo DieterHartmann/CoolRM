@@ -12,6 +12,7 @@ import contactRoutes from './routes/contacts.js';
 import widgetRoutes from './routes/widget.js';
 import adminRoutes from './routes/admin.js';
 import emailAccountRoutes from './routes/email-account.js';
+import tagRoutes from './routes/tags.js';
 
 // Extend Fastify's request type to carry session context
 declare module 'fastify' {
@@ -136,6 +137,7 @@ export async function buildApp() {
   await app.register(widgetRoutes, { prefix: '/api/v1/widget' });
   await app.register(adminRoutes, { prefix: '/api/v1/admin' });
   await app.register(emailAccountRoutes, { prefix: '/api/v1/applets' });
+  await app.register(tagRoutes, { prefix: '/api/v1/applets' });
 
   return app;
 }

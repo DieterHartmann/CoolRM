@@ -70,10 +70,31 @@ ALTER TABLE contacts ADD COLUMN IF NOT EXISTS custom_fields JSONB;
 ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS last_error TEXT;
 ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS last_error_at TIMESTAMPTZ;
 
+CREATE TABLE IF NOT EXISTS tags (
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  applet_id  UUID        NOT NULL,
+  name       TEXT        NOT NULL,
+  color      TEXT        NOT NULL DEFAULT '#6366f1',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT tags_applet_name_unique UNIQUE (applet_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS contact_tags (
+  contact_id UUID        NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  tag_id     UUID        NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  applied_by TEXT        NOT NULL DEFAULT 'manual'
+               CHECK (applied_by IN ('manual', 'llm', 'admin')),
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (contact_id, tag_id)
+);
+
 -- Indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_contacts_applet_id   ON contacts(applet_id);
 CREATE INDEX IF NOT EXISTS idx_contacts_status      ON contacts(status) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_contacts_email       ON contacts(email);
 CREATE INDEX IF NOT EXISTS idx_threads_contact_id   ON threads(contact_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread_id   ON messages(thread_id);
-CREATE INDEX IF NOT EXISTS idx_email_accounts_applet ON email_accounts(applet_id);
+CREATE INDEX IF NOT EXISTS idx_email_accounts_applet  ON email_accounts(applet_id);
+CREATE INDEX IF NOT EXISTS idx_tags_applet_id         ON tags(applet_id);
+CREATE INDEX IF NOT EXISTS idx_contact_tags_contact   ON contact_tags(contact_id);
+CREATE INDEX IF NOT EXISTS idx_contact_tags_tag       ON contact_tags(tag_id);

@@ -1,5 +1,5 @@
 import { CSSProperties, FormEvent, useEffect, useRef, useState, useCallback } from 'react';
-import { api, Applet, Contact, FieldDef, FieldType, DEFAULT_FIELDS, SmtpAccount, SmtpAccountInput, ThreadMessage } from '../lib/api.js';
+import { api, Applet, Contact, FieldDef, FieldType, DEFAULT_FIELDS, SmtpAccount, SmtpAccountInput, Tag, ThreadMessage } from '../lib/api.js';
 import { useAuth } from '../lib/auth.js';
 
 type Tab = 'contacts' | 'fields' | 'email' | 'embed';
@@ -223,19 +223,70 @@ function EmptyState({ hasApplets }: { hasApplets: boolean }) {
   );
 }
 
+const TAG_COLORS = [
+  '#6366f1', '#8b5cf6', '#ec4899', '#ef4444',
+  '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#64748b',
+];
+
+function TagChip({ tag, onRemove, size = 'sm' }: { tag: Tag; onRemove?: () => void; size?: 'sm' | 'xs' }) {
+  const bg = tag.color + '22';
+  const border = tag.color + '55';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      padding: size === 'xs' ? '1px 5px' : '2px 7px',
+      borderRadius: 999,
+      fontSize: size === 'xs' ? 10 : 11,
+      fontWeight: 600,
+      background: bg,
+      color: tag.color,
+      border: `1px solid ${border}`,
+      whiteSpace: 'nowrap',
+    }}>
+      {tag.name}
+      {onRemove && (
+        <button
+          onClick={e => { e.stopPropagation(); onRemove(); }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px', color: tag.color, fontSize: 12, lineHeight: 1, display: 'flex', alignItems: 'center' }}
+        >×</button>
+      )}
+    </span>
+  );
+}
+
 function ContactsPanel({ contacts: initial, loading, appletId, fieldConfig }: { contacts: Contact[]; loading: boolean; appletId: string; fieldConfig: FieldDef[] }) {
   const [contacts, setContacts] = useState(initial);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [showTagManager, setShowTagManager] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0]!);
+  const [creatingTag, setCreatingTag] = useState(false);
+  const [tagError, setTagError] = useState('');
 
   useEffect(() => {
     setContacts(initial);
     setSelectedContact(null);
   }, [initial]);
 
+  useEffect(() => {
+    api.getTags(appletId)
+      .then(({ tags: list }) => setTags(list))
+      .catch(() => { /* non-fatal */ });
+  }, [appletId]);
+
   const handleReplySent = useCallback((contactId: string) => {
     setContacts(prev => prev.map(c =>
       c.id === contactId ? { ...c, threadCount: Math.max(1, c.threadCount) } : c
     ));
+  }, []);
+
+  const handleContactTagsChange = useCallback((contactId: string, newTags: Tag[]) => {
+    setContacts(prev => prev.map(c => c.id === contactId ? { ...c, tags: newTags } : c));
+    setSelectedContact(prev => {
+      if (!prev || prev.id !== contactId) return prev;
+      return { ...prev, tags: newTags };
+    });
   }, []);
 
   async function cycleStatus(e: React.MouseEvent, c: Contact) {
@@ -250,66 +301,167 @@ function ContactsPanel({ contacts: initial, loading, appletId, fieldConfig }: { 
     }
   }
 
-  if (loading) return <div style={{ color: '#94a3b8', fontSize: 14 }}>Loading contacts…</div>;
-  if (contacts.length === 0) {
-    return (
-      <div style={{ textAlign: 'center', padding: '48px 0', color: '#94a3b8', fontSize: 14 }}>
-        No contacts yet. Embed the widget on your site to start collecting leads.
-      </div>
-    );
+  async function handleCreateTag(e: FormEvent) {
+    e.preventDefault();
+    if (!newTagName.trim()) return;
+    setCreatingTag(true);
+    setTagError('');
+    try {
+      const { tag } = await api.createTag(appletId, newTagName.trim(), newTagColor);
+      setTags(prev => [...prev, tag]);
+      setNewTagName('');
+      setNewTagColor(TAG_COLORS[0]!);
+    } catch (err) {
+      setTagError(err instanceof Error ? err.message : 'Failed to create tag');
+    } finally {
+      setCreatingTag(false);
+    }
   }
 
+  async function handleDeleteTag(tagId: string) {
+    await api.deleteTag(appletId, tagId);
+    setTags(prev => prev.filter(t => t.id !== tagId));
+    setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.filter(t => t.id !== tagId) })));
+    setSelectedContact(prev => prev ? { ...prev, tags: prev.tags.filter(t => t.id !== tagId) } : null);
+  }
+
+  if (loading) return <div style={{ color: '#94a3b8', fontSize: 14 }}>Loading contacts…</div>;
+
   return (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-      <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              {['Ref', 'Name', 'Email', 'Phone', 'Status', 'Date', ''].map(h => (
-                <th key={h} style={th}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {contacts.map((c, i) => {
-              const isSelected = selectedContact?.id === c.id;
-              return (
-                <tr
-                  key={c.id}
-                  onClick={() => setSelectedContact(isSelected ? null : c)}
-                  style={{
-                    borderBottom: i < contacts.length - 1 ? '1px solid #f1f5f9' : 'none',
-                    background: isSelected ? '#eff6ff' : 'transparent',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <td style={{ ...td, fontFamily: 'monospace', color: '#3b82f6', fontWeight: 600 }}>{c.refNumber}</td>
-                  <td style={td}>{c.name}</td>
-                  <td style={td}>{c.email}</td>
-                  <td style={{ ...td, color: '#64748b' }}>{c.phone ?? '—'}</td>
-                  <td style={td}><StatusBadge status={c.status} onClick={(e) => cycleStatus(e, c)} /></td>
-                  <td style={{ ...td, color: '#64748b', whiteSpace: 'nowrap' }}>{formatDate(c.createdAt)}</td>
-                  <td style={{ ...td, color: '#94a3b8', fontSize: 12, whiteSpace: 'nowrap' }}>
-                    {c.threadCount > 0 && (
-                      <span style={{ color: '#3b82f6' }} title="Has messages">💬 {c.threadCount}</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+    <div>
+      {/* Toolbar row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <button
+          onClick={() => setShowTagManager(v => !v)}
+          style={{
+            padding: '6px 12px', borderRadius: 6, border: '1px solid #e2e8f0',
+            background: showTagManager ? '#eff6ff' : '#fff',
+            color: showTagManager ? '#3b82f6' : '#475569',
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          }}
+        >
+          {showTagManager ? '▾' : '▸'} Manage Tags {tags.length > 0 && `(${tags.length})`}
+        </button>
       </div>
 
-      {selectedContact && (
-        <div style={{ width: 400, flexShrink: 0 }}>
-          <ThreadPanel
-            contact={selectedContact}
-            appletId={appletId}
-            fieldConfig={fieldConfig}
-            onClose={() => setSelectedContact(null)}
-            onReplySent={() => handleReplySent(selectedContact.id)}
-          />
+      {/* Tag manager panel */}
+      {showTagManager && (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 16px', marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
+            Applet Tags
+          </div>
+
+          {tags.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 10 }}>No tags yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {tags.map(tag => (
+                <span key={tag.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <TagChip tag={tag} onRemove={() => { void handleDeleteTag(tag.id); }} />
+                </span>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={handleCreateTag} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              value={newTagName}
+              onChange={e => setNewTagName(e.target.value)}
+              placeholder="Tag name"
+              maxLength={50}
+              style={{ ...inlineInput, width: 160 }}
+            />
+            <div style={{ display: 'flex', gap: 4 }}>
+              {TAG_COLORS.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setNewTagColor(c)}
+                  style={{
+                    width: 18, height: 18, borderRadius: '50%', background: c, border: 'none', cursor: 'pointer',
+                    outline: newTagColor === c ? `2px solid ${c}` : 'none',
+                    outlineOffset: 2,
+                  }}
+                />
+              ))}
+            </div>
+            <button type="submit" disabled={creatingTag || !newTagName.trim()} style={{ ...createBtn, flex: 'none', padding: '6px 14px', fontSize: 12 }}>
+              {creatingTag ? '…' : 'Add'}
+            </button>
+            {tagError && <span style={{ fontSize: 12, color: '#dc2626' }}>{tagError}</span>}
+          </form>
+        </div>
+      )}
+
+      {contacts.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '48px 0', color: '#94a3b8', fontSize: 14 }}>
+          No contacts yet. Embed the widget on your site to start collecting leads.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  {['Ref', 'Name', 'Email', 'Phone', 'Status', 'Date', 'Tags', ''].map(h => (
+                    <th key={h} style={th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {contacts.map((c, i) => {
+                  const isSelected = selectedContact?.id === c.id;
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => setSelectedContact(isSelected ? null : c)}
+                      style={{
+                        borderBottom: i < contacts.length - 1 ? '1px solid #f1f5f9' : 'none',
+                        background: isSelected ? '#eff6ff' : 'transparent',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <td style={{ ...td, fontFamily: 'monospace', color: '#3b82f6', fontWeight: 600 }}>{c.refNumber}</td>
+                      <td style={td}>{c.name}</td>
+                      <td style={td}>{c.email}</td>
+                      <td style={{ ...td, color: '#64748b' }}>{c.phone ?? '—'}</td>
+                      <td style={td}><StatusBadge status={c.status} onClick={(e) => cycleStatus(e, c)} /></td>
+                      <td style={{ ...td, color: '#64748b', whiteSpace: 'nowrap' }}>{formatDate(c.createdAt)}</td>
+                      <td style={{ ...td, maxWidth: 160 }}>
+                        {c.tags.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                            {c.tags.slice(0, 2).map(t => <TagChip key={t.id} tag={t} size="xs" />)}
+                            {c.tags.length > 2 && (
+                              <span style={{ fontSize: 10, color: '#94a3b8', alignSelf: 'center' }}>+{c.tags.length - 2}</span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ ...td, color: '#94a3b8', fontSize: 12, whiteSpace: 'nowrap' }}>
+                        {c.threadCount > 0 && (
+                          <span style={{ color: '#3b82f6' }} title="Has messages">💬 {c.threadCount}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {selectedContact && (
+            <div style={{ width: 400, flexShrink: 0 }}>
+              <ThreadPanel
+                contact={selectedContact}
+                appletId={appletId}
+                fieldConfig={fieldConfig}
+                allTags={tags}
+                onClose={() => setSelectedContact(null)}
+                onReplySent={() => handleReplySent(selectedContact.id)}
+                onTagsChange={handleContactTagsChange}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -325,18 +477,21 @@ function ContactField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ThreadPanel({ contact, appletId, fieldConfig, onClose, onReplySent }: {
+function ThreadPanel({ contact, appletId, fieldConfig, allTags, onClose, onReplySent, onTagsChange }: {
   contact: Contact;
   appletId: string;
   fieldConfig: FieldDef[];
+  allTags: Tag[];
   onClose: () => void;
   onReplySent?: () => void;
+  onTagsChange?: (contactId: string, tags: Tag[]) => void;
 }) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
+  const [showTagPicker, setShowTagPicker] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -351,6 +506,17 @@ function ThreadPanel({ contact, appletId, fieldConfig, onClose, onReplySent }: {
       .catch(() => setMessages([]))
       .finally(() => setLoading(false));
   }, [appletId, contact.id]);
+
+  async function handleApplyTag(tag: Tag) {
+    setShowTagPicker(false);
+    await api.applyTag(appletId, contact.id, tag.id);
+    onTagsChange?.(contact.id, [...contact.tags, tag]);
+  }
+
+  async function handleRemoveTag(tagId: string) {
+    await api.removeTag(appletId, contact.id, tagId);
+    onTagsChange?.(contact.id, contact.tags.filter(t => t.id !== tagId));
+  }
 
   async function handleSendReply() {
     if (!replyText.trim() || sending) return;
@@ -396,6 +562,51 @@ function ThreadPanel({ contact, appletId, fieldConfig, onClose, onReplySent }: {
               <ContactField key={f.id} label={f.label} value={contact.customFields![f.id]!} />
             ))
           }
+        </div>
+
+        {/* Tags row */}
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, position: 'relative' }}>
+          {contact.tags.map(tag => (
+            <TagChip key={tag.id} tag={tag} onRemove={() => { void handleRemoveTag(tag.id); }} />
+          ))}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowTagPicker(v => !v)}
+              title="Add tag"
+              style={{ padding: '2px 7px', borderRadius: 999, border: '1px dashed #cbd5e1', background: 'none', color: '#94a3b8', fontSize: 11, cursor: 'pointer', lineHeight: 1.5 }}
+            >
+              + tag
+            </button>
+            {showTagPicker && (
+              <>
+                <div onClick={() => setShowTagPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 10 }} />
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, marginTop: 4,
+                  background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 11, minWidth: 160, padding: 6,
+                }}>
+                  {allTags.filter(t => !contact.tags.some(ct => ct.id === t.id)).length === 0 ? (
+                    <div style={{ fontSize: 12, color: '#94a3b8', padding: '4px 6px' }}>All tags applied</div>
+                  ) : (
+                    allTags
+                      .filter(t => !contact.tags.some(ct => ct.id === t.id))
+                      .map(tag => (
+                        <button
+                          key={tag.id}
+                          onClick={() => { void handleApplyTag(tag); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '5px 7px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: 5, textAlign: 'left' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                        >
+                          <span style={{ width: 10, height: 10, borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
+                          <span style={{ fontSize: 12, color: '#1e293b' }}>{tag.name}</span>
+                        </button>
+                      ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

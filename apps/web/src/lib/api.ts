@@ -72,6 +72,14 @@ export interface TenantAdmin {
   applets: AppletAdmin[];
 }
 
+export interface Tag {
+  id: string;
+  appletId: string;
+  name: string;
+  color: string;
+  createdAt: string;
+}
+
 export interface Contact {
   id: string;
   refNumber: string;
@@ -83,6 +91,7 @@ export interface Contact {
   status: 'new' | 'open' | 'resolved';
   createdAt: string;
   threadCount: number;
+  tags: Tag[];
 }
 
 export interface ThreadMessage {
@@ -136,4 +145,16 @@ export const api = {
     req<Record<string, never>>('DELETE', `/api/v1/applets/${appletId}/email-account`),
   testEmailAccount: (appletId: string, data: SmtpAccountInput) =>
     req<{ ok: boolean }>('POST', `/api/v1/applets/${appletId}/email-account/test`, data),
+  getTags: (appletId: string) =>
+    req<{ tags: Tag[] }>('GET', `/api/v1/applets/${appletId}/tags`),
+  createTag: (appletId: string, name: string, color: string) =>
+    req<{ tag: Tag }>('POST', `/api/v1/applets/${appletId}/tags`, { name, color }),
+  updateTag: (appletId: string, tagId: string, patch: { name?: string; color?: string }) =>
+    req<{ tag: Tag }>('PATCH', `/api/v1/applets/${appletId}/tags/${tagId}`, patch),
+  deleteTag: (appletId: string, tagId: string) =>
+    req<Record<string, never>>('DELETE', `/api/v1/applets/${appletId}/tags/${tagId}`),
+  applyTag: (appletId: string, contactId: string, tagId: string) =>
+    req<{ tag: Tag }>('POST', `/api/v1/applets/${appletId}/contacts/${contactId}/tags`, { tagId }),
+  removeTag: (appletId: string, contactId: string, tagId: string) =>
+    req<Record<string, never>>('DELETE', `/api/v1/applets/${appletId}/contacts/${contactId}/tags/${tagId}`),
 };
