@@ -468,11 +468,14 @@ function ContactsPanel({ contacts: initial, loading, appletId, fieldConfig }: { 
   );
 }
 
-function ContactField({ label, value }: { label: string; value: string }) {
+function ContactField({ label, value }: { label: string; value: string | boolean | string[] }) {
+  const display = typeof value === 'boolean'
+    ? (value ? 'Yes' : 'No')
+    : Array.isArray(value) ? value.join(', ') : value;
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ fontSize: 12, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
+      <div style={{ fontSize: 12, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display}</div>
     </div>
   );
 }
@@ -557,7 +560,14 @@ function ThreadPanel({ contact, appletId, fieldConfig, allTags, onClose, onReply
           <ContactField label="Email" value={contact.email} />
           {contact.phone && <ContactField label="Phone" value={contact.phone} />}
           {contact.customFields && fieldConfig
-            .filter(f => f.id.startsWith('cf_') && contact.customFields![f.id])
+            .filter(f => {
+              if (!f.id.startsWith('cf_')) return false;
+              const v = contact.customFields![f.id];
+              if (v === undefined || v === null) return false;
+              if (typeof v === 'string') return v !== '';
+              if (Array.isArray(v)) return v.length > 0;
+              return true; // boolean — show even when false
+            })
             .map(f => (
               <ContactField key={f.id} label={f.label} value={contact.customFields![f.id]!} />
             ))
@@ -699,6 +709,7 @@ function FieldsPanel({ applet, onSaved }: { applet: Applet; onSaved: (fields: Fi
   const [newLabel, setNewLabel] = useState('');
   const [newType, setNewType] = useState<FieldType>('text');
   const [newPlaceholder, setNewPlaceholder] = useState('');
+  const [newOptions, setNewOptions] = useState('');
 
   useEffect(() => {
     setFields(applet.fieldConfig ?? DEFAULT_FIELDS);
@@ -718,16 +729,22 @@ function FieldsPanel({ applet, onSaved }: { applet: Applet; onSaved: (fields: Fi
     e.preventDefault();
     if (!newLabel.trim()) return;
     const id = 'cf_' + Date.now().toString(36);
+    const options = newType === 'multiselect'
+      ? newOptions.split(',').map(o => o.trim()).filter(o => o.length > 0)
+      : undefined;
+    if (newType === 'multiselect' && (!options || options.length === 0)) return;
     setFields(prev => [...prev, {
       id,
       label: newLabel.trim(),
       type: newType,
       required: false,
-      ...(newPlaceholder.trim() ? { placeholder: newPlaceholder.trim() } : {}),
+      ...(newPlaceholder.trim() && newType !== 'checkbox' && newType !== 'multiselect' ? { placeholder: newPlaceholder.trim() } : {}),
+      ...(options ? { options } : {}),
     }]);
     setNewLabel('');
     setNewType('text');
     setNewPlaceholder('');
+    setNewOptions('');
     setShowAdd(false);
   }
 
@@ -760,7 +777,7 @@ function FieldsPanel({ applet, onSaved }: { applet: Applet; onSaved: (fields: Fi
             <div key={field.id} style={fieldCard}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', width: 52, flexShrink: 0 }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', width: 72, flexShrink: 0 }}>
                     {field.type}
                   </span>
                   <input
@@ -770,15 +787,30 @@ function FieldsPanel({ applet, onSaved }: { applet: Applet; onSaved: (fields: Fi
                     style={{ ...inlineInput, fontWeight: 500 }}
                   />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 60, flexShrink: 0 }} />
-                  <input
-                    value={field.placeholder ?? ''}
-                    onChange={e => updateField(field.id, { placeholder: e.target.value })}
-                    placeholder="Placeholder (optional)"
-                    style={{ ...inlineInput, color: '#64748b', fontSize: 12 }}
-                  />
-                </div>
+                {field.type !== 'checkbox' && field.type !== 'multiselect' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 80, flexShrink: 0 }} />
+                    <input
+                      value={field.placeholder ?? ''}
+                      onChange={e => updateField(field.id, { placeholder: e.target.value })}
+                      placeholder="Placeholder (optional)"
+                      style={{ ...inlineInput, color: '#64748b', fontSize: 12 }}
+                    />
+                  </div>
+                )}
+                {field.type === 'multiselect' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 80, flexShrink: 0, fontSize: 11, color: '#94a3b8' }}>Options</span>
+                    <input
+                      value={(field.options ?? []).join(', ')}
+                      onChange={e => updateField(field.id, {
+                        options: e.target.value.split(',').map(o => o.trim()).filter(o => o.length > 0),
+                      })}
+                      placeholder="Option A, Option B, Option C"
+                      style={{ ...inlineInput, color: '#475569', fontSize: 12 }}
+                    />
+                  </div>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 12 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: locked ? '#94a3b8' : '#475569', cursor: locked ? 'default' : 'pointer' }}>
@@ -821,25 +853,41 @@ function FieldsPanel({ applet, onSaved }: { applet: Applet; onSaved: (fields: Fi
             />
             <select
               value={newType}
-              onChange={e => setNewType(e.target.value as FieldType)}
+              onChange={e => { setNewType(e.target.value as FieldType); setNewOptions(''); }}
               style={selectStyle}
             >
               <option value="text">Text</option>
               <option value="tel">Phone / Tel</option>
               <option value="textarea">Multi-line</option>
+              <option value="checkbox">Checkbox</option>
+              <option value="multiselect">Multi-select</option>
             </select>
           </div>
-          <div style={{ marginBottom: 10 }}>
-            <input
-              value={newPlaceholder}
-              onChange={e => setNewPlaceholder(e.target.value)}
-              placeholder="Placeholder (optional)"
-              style={{ ...inlineInput, width: '100%' }}
-            />
-          </div>
+          {newType !== 'checkbox' && newType !== 'multiselect' && (
+            <div style={{ marginBottom: 10 }}>
+              <input
+                value={newPlaceholder}
+                onChange={e => setNewPlaceholder(e.target.value)}
+                placeholder="Placeholder (optional)"
+                style={{ ...inlineInput, width: '100%' }}
+              />
+            </div>
+          )}
+          {newType === 'multiselect' && (
+            <div style={{ marginBottom: 10 }}>
+              <input
+                value={newOptions}
+                onChange={e => setNewOptions(e.target.value)}
+                placeholder="Options (comma-separated) *"
+                required
+                style={{ ...inlineInput, width: '100%' }}
+              />
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>e.g. Option A, Option B, Option C</div>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="submit" style={createBtn}>Add field</button>
-            <button type="button" onClick={() => { setShowAdd(false); setNewLabel(''); setNewType('text'); setNewPlaceholder(''); }} style={cancelBtn}>Cancel</button>
+            <button type="button" onClick={() => { setShowAdd(false); setNewLabel(''); setNewType('text'); setNewPlaceholder(''); setNewOptions(''); }} style={cancelBtn}>Cancel</button>
           </div>
         </form>
       ) : (

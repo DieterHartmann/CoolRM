@@ -1,4 +1,4 @@
-export type FieldType = 'text' | 'email' | 'tel' | 'textarea';
+export type FieldType = 'text' | 'email' | 'tel' | 'textarea' | 'checkbox' | 'multiselect';
 
 export interface FieldDef {
   id: string;
@@ -6,6 +6,7 @@ export interface FieldDef {
   type: FieldType;
   required: boolean;
   placeholder?: string;
+  options?: string[]; // multiselect only
 }
 
 export const DEFAULT_FIELDS: FieldDef[] = [
@@ -87,7 +88,7 @@ export interface Contact {
   email: string;
   phone: string | null;
   message: string | null;
-  customFields: Record<string, string> | null;
+  customFields: Record<string, string | boolean | string[]> | null;
   status: 'new' | 'open' | 'resolved';
   createdAt: string;
   threadCount: number;

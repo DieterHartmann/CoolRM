@@ -18,7 +18,7 @@
     .field { margin-bottom: 14px; }
     label { display: block; font-size: 13px; font-weight: 500; color: #374151; margin-bottom: 4px; }
     .req { color: #ef4444; margin-left: 2px; }
-    input, textarea {
+    input:not([type=checkbox]), textarea {
       width: 100%;
       padding: 9px 12px;
       border: 1px solid #d1d5db;
@@ -31,11 +31,29 @@
       outline: none;
       -webkit-appearance: none;
     }
-    input:focus, textarea:focus {
+    input:not([type=checkbox]):focus, textarea:focus {
       border-color: #6d28d9;
       box-shadow: 0 0 0 3px rgba(109,40,217,0.12);
     }
     textarea { resize: vertical; min-height: 90px; }
+    input[type=checkbox] {
+      width: 16px; height: 16px;
+      cursor: pointer;
+      accent-color: #6d28d9;
+      flex-shrink: 0;
+      margin: 0;
+    }
+    .checkbox-label {
+      display: flex; align-items: center; gap: 10px;
+      cursor: pointer; font-weight: 400;
+      font-size: 15px; color: #1f2937;
+    }
+    .multiselect-group { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+    .multiselect-option {
+      display: flex; align-items: center; gap: 10px;
+      cursor: pointer; font-weight: 400;
+      font-size: 14px; color: #374151;
+    }
     .btn {
       width: 100%;
       padding: 11px;
@@ -128,16 +146,32 @@
       fieldsContainer.innerHTML = cfg.map(function(field) {
         var reqSpan = field.required ? '<span class="req">*</span>' : '';
         var ph = esc(field.placeholder || '');
+        var fid = esc(field.id);
+        var flabel = esc(field.label);
+
+        if (field.type === 'checkbox') {
+          return '<div class="field"><label class="checkbox-label"><input type="checkbox" id="f-' + fid + '"><span>' + flabel + reqSpan + '</span></label></div>';
+        }
+
+        if (field.type === 'multiselect') {
+          var opts = Array.isArray(field.options) ? field.options : [];
+          var optHtml = opts.map(function(opt) {
+            var oval = esc(opt);
+            return '<label class="multiselect-option"><input type="checkbox" data-ms="' + fid + '" value="' + oval + '"><span>' + oval + '</span></label>';
+          }).join('');
+          return '<div class="field"><label>' + flabel + reqSpan + '</label><div class="multiselect-group">' + optHtml + '</div></div>';
+        }
+
         var inputHtml;
         if (field.type === 'textarea') {
-          inputHtml = '<textarea id="f-' + esc(field.id) + '" rows="4" placeholder="' + ph + '"></textarea>';
+          inputHtml = '<textarea id="f-' + fid + '" rows="4" placeholder="' + ph + '"></textarea>';
         } else {
           var ac = field.id === 'name' ? ' autocomplete="name"'
                  : field.id === 'email' ? ' autocomplete="email"'
                  : field.id === 'phone' ? ' autocomplete="tel"' : '';
-          inputHtml = '<input id="f-' + esc(field.id) + '" type="' + esc(field.type) + '" placeholder="' + ph + '"' + ac + '>';
+          inputHtml = '<input id="f-' + fid + '" type="' + esc(field.type) + '" placeholder="' + ph + '"' + ac + '>';
         }
-        return '<div class="field"><label for="f-' + esc(field.id) + '">' + esc(field.label) + reqSpan + '</label>' + inputHtml + '</div>';
+        return '<div class="field"><label for="f-' + fid + '">' + flabel + reqSpan + '</label>' + inputHtml + '</div>';
       }).join('');
       loadingEl.style.display = 'none';
       formEl.style.display = '';
@@ -172,9 +206,34 @@
 
       for (var i = 0; i < fields.length; i++) {
         var field = fields[i];
+        var val;
+
+        if (field.type === 'checkbox') {
+          var cbEl = document.getElementById('f-' + field.id);
+          val = cbEl ? cbEl.checked : false;
+          if (field.required && !val) {
+            showErr(field.label + ' must be checked.');
+            return;
+          }
+          // Always include checkbox value in custom fields
+          customFields[field.id] = val;
+          continue;
+        }
+
+        if (field.type === 'multiselect') {
+          var msEls = document.querySelectorAll('[data-ms="' + field.id + '"]:checked');
+          val = Array.prototype.map.call(msEls, function(cb) { return cb.value; });
+          if (field.required && val.length === 0) {
+            showErr('Please select at least one option for ' + field.label + '.');
+            return;
+          }
+          if (val.length > 0) customFields[field.id] = val;
+          continue;
+        }
+
         var el = document.getElementById('f-' + field.id);
         if (!el) continue;
-        var val = el.value.trim();
+        val = el.value.trim();
 
         if (field.required && !val) {
           showErr((field.label || field.id) + ' is required.');

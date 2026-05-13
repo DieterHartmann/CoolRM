@@ -14,13 +14,19 @@ interface SmtpConfigStored {
   encryptedPass: string;
 }
 
+const customFieldValue = z.union([
+  z.string().max(1000),
+  z.boolean(),
+  z.array(z.string().max(200)).max(50),
+]);
+
 const submitBody = z.object({
   widget_key: z.string().startsWith('wk_', 'Invalid widget key'),
   name: z.string().min(1, 'Name is required').max(200),
   email: z.string().email('Invalid email address'),
   phone: z.string().max(50).optional(),
   message: z.string().max(5000).optional(),
-  custom_fields: z.record(z.string().max(1000)).optional(),
+  custom_fields: z.record(customFieldValue).optional(),
 });
 
 const contactRoutes: FastifyPluginAsync = async (app) => {
